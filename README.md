@@ -29,7 +29,7 @@ While ShellCheck *can* capture pitfalls and style errors, it seems that the numb
 
 ## Extending the Language
 
-One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [CoffeeScript](https://coffeescript.org), for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods. In our case, we can consider adding a prelude which ensures up-to-date versions of familiar tools like `sed` and `grep`, but we can additionally consider providing extremely useful and portable tools such as [gnu parallel](https://www.gnu.org/software/parallel), which isn't very well-known, possibly due to not being installed by default (unlike `xargs`, which is less featureful but does some of the same things).
+One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [CoffeeScript](https://coffeescript.org), for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [Prelude / Runtime](#prelude--runtime)). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like `sed` and `grep`, but also *extremely useful and portable tools* such as [gnu parallel](https://www.gnu.org/software/parallel) (which isn't very well-known, possibly due to not being installed by default (unlike `xargs`, which is less featureful but does some of the same things)).
 
 Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
 
@@ -56,15 +56,15 @@ Right now, the "funnel" language's functionality will be exposed through a singl
 - [ ] define all supported platforms.
 - [ ] define a grammar (as close to the [bash grammar](http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as possible).
 - [ ] implement the transpiler.
-- [ ] begin to consider a module and package system for (portable) bash scripts
-  - [ ] want something that will work on existing bash/zsh code (e.g. if you put them in a special
-    directory they can be specially required or loaded)?
-    - the ["Prelude"/"Runtime"](#prelude--runtime) for this (the shell script code that it loads)
-      should have a function that is available to bash and zsh scripts that it loads which allows
-      them to load something from the module system with similar ease!
-- [ ] figure out whether/how this language can be smart enough to bootstrap itself (i.e. the compiler is
+  - [ ] figure out whether/how this language can be smart enough to bootstrap itself (i.e. the compiler is
   written in it)
-  - **^!!!^**
+    - **^!!!^**
+  - [ ] begin to consider a module and package system for (portable) bash scripts
+    - [ ] want something that will work on existing bash/zsh code (e.g. if you put them in a special
+      directory they can be specially required or loaded)?
+      - the ["Prelude"/"Runtime"](#prelude--runtime) for this (the shell script code that it loads)
+        should have a function that is available to bash and zsh scripts that it loads which allows
+        them to load something from the module system with similar ease!
 - [ ] consider using any relevant parts of [shellcheck](https://github.com/koalaman/shellcheck)!!
 
 # Language Modes
