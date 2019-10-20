@@ -1,7 +1,7 @@
-bashyscript
+funnel
 ===========
 
-- *like "bash y script" en español. also sounds like "[bathyschaphe](https://en.wikipedia.org/wiki/Bathyscaphe)", which is a funny word.*
+*The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting.*
 
 A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts.
 

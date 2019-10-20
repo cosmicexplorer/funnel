@@ -1,7 +1,7 @@
 language
 ========
 
-Description of the ["bashyscript"](../README.md) *language* which is intended to extend the POSIX shell syntax to make scripts more maintainable, less brittle, and more fun to write! See [Extending the Language](../README.md#extending-the-language) for more context on the motivation for a separate language.
+Description of the ["funnel"](../README.md) *language* which is intended to extend the POSIX shell syntax to make scripts more maintainable, less brittle, and more fun to write! See [Extending the Language](../README.md#extending-the-language) for more context on the motivation for a separate language.
 
 # Parsing
 One of the ways to determine whether a language is capable of bootstrapping the compiler itself (see [Goals](../README.md#goals)) is to see how painful it is to write a parser in it!
