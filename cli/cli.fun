@@ -13,8 +13,11 @@ ${:bc, $printf-specs} <= import('common')
 # NB: '$a: integer' is the same as '$a <= :integer'!
 # '<match-expr> = <match-expr type="lazy-eval" [<match-expr> => <eval-body>]> | <match-expr>'
 # NB: USING THE BACKSLASH AS IMPLICIT XARGS IS...I N C R E D I B L E!!!!!
-:calculate = ($a <= :integer ; $op ; $b: integer) => \:bc("$a$op$b") \
+# NB: This '=>' construction can compile almost directly to a `while read -r`!
+:calculate <= ($a <= :integer ; $op ; $b: integer) => \:bc("$a$op$b")
   | :integer
+# equivalent:
+:calculate <= :integer <= ($a: integer ; $op ; $b: integer) => \:bc("${a}${op}${b}")
 # equivalent in "shell syntax":
 function calculate() {
   # FIXME: if any of these fail, the function should fail with an error!
@@ -48,6 +51,11 @@ function calculate() {
 # 3. <bind-expr> \subsetneq <match-expr>
 # 4. '($_ => calculate(...))' can be abstracted into '<bind-expr> => <function-call>'.
 
+# NB: attempt at a typed production manipulating typed subproductions!
+# NB: The '<= :integer' type annotation here is optional, as it is inferred from the ':integer'
+# return type of ':integer+plus($x: integer)'!
+:add <= :integer <= ($a:integer ; '+' ; $b:integer) => $a+plus($b)
+
 # Modifying existing variables (associative array):
 $printf-specs+integer <= 'd'
 # equivalent:
@@ -71,7 +79,7 @@ $six <= '4':integer+plus('3')
 :port_num <= :integer <= /[0-9]+/
 # equivalent to above
 function port_num() {
-  sed -n -E -e '/^[0-9]+$/ p' | :integer # Where `:integer` is from the prelude.
+  sed -n -E -e '/^[0-9]+$/ p' | parse :integer # Where `parse` is from the prelude.
 }
 
 # the following line is in "match syntax"
