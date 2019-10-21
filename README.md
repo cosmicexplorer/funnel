@@ -51,7 +51,7 @@ These shouldn't be considered right now:
 - breaking compatibility with older bash versions.
 
 # TODO
-Right now, the "funnel" language's functionality will be exposed through a single executable `funsh`.
+Right now, the "funnel" language's functionality will be exposed through a single executable `fun`.
 - [ ] define command-line tools to control (such as `sed` or `parallel`), and create a method to download them on all supported platforms.
 - [ ] define all supported platforms.
 - [ ] define a grammar (as close to the [bash grammar](http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as possible).
