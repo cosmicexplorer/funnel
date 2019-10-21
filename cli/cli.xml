@@ -83,9 +83,7 @@
     <!-- Expands to <production production_decl=":port"><matchers><parser><pattern>:[0-9]+</...>. Errors if any separate <matchers> block (or equivalent) is defined in the other child nodes. -->
     <production production_decl=":port_num">
       <pattern>[0-9]+</pattern>
-      <convert-result>
-        <production-dereference>:integer</production-dereference>
-      </convert-result>
+      <production-dereference>:integer</production-dereference>
     </production>
     <production production_decl=":port">
       <matchers>
