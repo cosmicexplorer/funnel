@@ -11,3 +11,5 @@ One of the ways to determine whether a language is capable of bootstrapping the 
   - *see [Goals](../README.md#goals): "empowers people with existing experience in some shell environment"*.
   - Could we extend shell pipelines to cover control flow for a parallel parser?
     - Could we make each "node" in the parse tree its own bash command (e.g. a `sed` script, or maybe a `while read -r` loop)?
+- Can we extend this capability to ensure that the language we design can also make writing *command line parsers* easier and more robust?
+  - *see [Prior Art/CoffeeScript](../cli/README.md#cofeescript) for considerations regarding robust argument parsing in real command-line tools!*

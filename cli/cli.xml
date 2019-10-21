@@ -1,0 +1,188 @@
+<?xml version="1.0"?>
+<cli>
+  <!-- For `my-cmd [--<encoded_file/*>... <some_file: encoded_file>] <some_url: file_or_https_url> [-[-]<*>...] [sub --<sub-*>] <something> [--] <else>...` -->
+  <!-- NB: This isn't `[sub -[-]<sub/*>...]` because there are no short-form options declared for the sub-group 'sub'. -->
+  <positional-arg-spec>
+    <positional-input>
+      <type>:encoded_file</type>
+      <dest>$some_file</dest>
+      <arity>
+        <repeating allow_empty="true" />
+      </arity>
+    </positional-input>
+    <positional-input>
+      <type>:file_or_https_url</type>
+      <arity>
+        <finite>1</finite>
+      </arity>
+    </positional-input>
+    <args-by-name />
+    <double-dash required="false" />
+    <!-- Because "else" is declared with arity="+", this will be interpreted as trailing with ..., and a <double-dash required="true"> will be necessary before another <positional-arg> may be declared with non-1 arity. -->
+    <positional-input>
+      <dest>$else</dest>
+    </positional-input>
+  </positional-arg-spec>
+  <argument-groups>
+    <global-group>
+      <arg dest="something">
+        <!-- <base> defaults to :str. -->
+        <type>:str</type>
+        <!-- Arity defaults to 1. -->
+        <arity>
+          <finite>1</finite>
+        </arity>
+        <help-text>asdf</help-text>
+      </arg>
+      <nonprefixed-group>
+        <description>fun variables</description>
+        <arg dest="else">
+          <arity>
+            <repeating allow_empty="false" />
+          </arity>
+          <short-form>i</short-form>
+          <long-form>else</long-form>
+        </arg>
+      </nonprefixed-group>
+    </global-group>
+    <prefixed-group prefix="sub">
+      <deprecated-arg>
+        <!-- TODO: expand this to allow arbitrary shell code when computing reassignments! -->
+        <reassign-to>$else</reassign-to>
+        <long-form>idk</long-form>
+      </deprecated-arg>
+    </prefixed-group>
+  </argument-groups>
+  <inputs>
+    <production production_decl=":file_encoding">
+      <help-text>encoding or something</help-text>
+      <matchers>
+        <literal>UTF-8</literal>
+        <literal>ASCII</literal>
+      </matchers>
+    </production>
+    <production production_decl=":encoded_file">
+      <base>:file</base>
+      <help-text>file with associated encoding</help-text>
+      <arguments>
+        <arg dest="encoding" production_ref=":file_encoding">
+          <short-form>e</short-form>
+          <long-form>enc</long-form>
+          <long-form deprecated="true">en</long-form>
+          <long-form>encoding</long-form>
+        </arg>
+      </arguments>
+    </production>
+    <production production_decl=":file_or_https_scheme">
+      <matchers>
+        <!-- Values XXX for case="XXX" must be unique within a <matchers> block! -->
+        <literal case="+was_file">file</literal>
+        <literal case="+was_https">https</literal>
+      </matchers>
+    </production>
+    <!-- Expands to <production production_decl=":port"><matchers><parser><pattern>:[0-9]+</...>. Errors if any separate <matchers> block (or equivalent) is defined in the other child nodes. -->
+    <production production_decl=":port_num">
+      <pattern>[0-9]+</pattern>
+      <convert-result>
+        <production-dereference>:integer</production-dereference>
+      </convert-result>
+    </production>
+    <production production_decl=":port">
+      <matchers>
+        <parser>
+          <literal>:</literal>
+          <production-dereference>:port_num</production-dereference>
+        </parser>
+      </matchers>
+    </production>
+    <production production_decl=":file_or_https_url">
+      <bases>
+        <production-dereference>:url</production-dereference>
+      </bases>
+      <computed>
+        <var name="$validated_scheme">
+          <production-dereference>:url$scheme</production-dereference>
+          <production-dereference>:file_or_https_scheme</production-dereference>
+        </var>
+        <!-- <matchers-bindings /> by default -->
+        <!-- <to><production-dereference>:str</...> by default. -->
+        <var name="$host" />
+        <!-- production_ref=":port$port_num" is syntax sugar for destructuring, equivalent shown immediately below. -->
+        <var name="$some_port_num">
+          <!-- The expected arity of instances of the :port production in the matched text. -->
+          <!-- This defaults to <finite>1</finite>. -->
+          <expected-arity>
+            <optional>
+              <default>443</default>
+            </optional>
+          </expected-arity>
+          <from>
+            <matchers-bindings>
+              <production-dereference>:port$port_num</production-dereference>
+            </matchers-bindings>
+          </from>
+        </var>
+        <!-- If name="$???" is not provided, this variable is only used for destructuring. -->
+        <var production_ref=":port">
+          <expected-arity>
+            <optional>
+              <default>:443</default>
+            </optional>
+          </expected-arity>
+          <!-- Opening a <var> within a <var> means to reference a subproduction of the "parent" production_ref. -->
+          <var production_ref=":port_num" name="$some_port_num">
+            <!-- This expected-arity is allowed, because the parent here provides an optional with default. -->
+            <expected-arity>
+              <finite>1</finite>
+            </expected-arity>
+          </var>
+          <from>
+            <matchers-bindings>
+              <production-dereference>:port</production-dereference>
+            </matchers-bindings>
+          </from>
+        </var>
+      </computed>
+      <matchers>
+        <!-- If no case="+???" is provided, there *must* be exactly one case. -->
+        <parser>
+          <group>
+            <arity><optional /></arity>
+            <elements>
+              <variable-dereference>$validated_scheme</variable-dereference>
+              <literal>://</literal>
+            </elements>
+          </group>
+          <!-- A default value can be provided here to make this part optional. -->
+          <group>
+            <captures-into>
+              <variable-dereference>$host</variable-dereference>
+            </captures-into>
+            <elements>
+              <pattern>[^/]+</pattern>
+            </elements>
+          </group>
+          <group>
+            <arity>
+              <!-- <conditional-evaluate-after> allows for arbitrary logic to be expanded after a production within scope is satisfied. -->
+              <!-- Same as source="$validated_scheme". -->
+              <conditional-evaluate-after source=":url$scheme:file_or_https_scheme">
+                <case-dereference case="+was_file">
+                  <finite>1</finite>
+                </case-dereference>
+                <case-dereference case="+was_https">
+                  <optional />
+                </case-dereference>
+              </conditional-evaluate-after>
+            </arity>
+            <elements>
+              <production-dereference>:port</production-dereference>
+            </elements>
+          </group>
+          <!-- Same as .*$ (to match the entire string). -->
+          <rest />
+        </parser>
+      </matchers>
+    </production>
+  </inputs>
+</cli>

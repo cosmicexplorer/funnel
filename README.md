@@ -47,14 +47,14 @@ Provide a shell scripting interface which:
 
 ## Non-Goals
 These shouldn't be considered right now:
-- runtime performance (at first).
-- breaking compatibility with older bash versions.
+- runtime performance.
+- worrying about compatibility with older bash versions.
 
 # TODO
 Right now, the "funnel" language's functionality will be exposed through a single executable `fun`.
-- [ ] define command-line tools to control (such as `sed` or `parallel`), and create a method to download them on all supported platforms.
-- [ ] define all supported platforms.
-- [ ] define a grammar (as close to the [bash grammar](http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html) as possible).
+- [ ] define command-line tools to control (such as `sed`, `parallel`, `jq`, `xmlstarlet`), and create a method to download them on all supported platforms.
+- [ ] define "all supported platforms".
+- [ ] define a grammar (see the [bash grammar](http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html)).
 - [ ] implement the transpiler.
   - [ ] figure out whether/how this language can be smart enough to bootstrap itself (i.e. the compiler is
   written in it)
