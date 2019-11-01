@@ -1,3 +1,4 @@
+# -*- mode: zsh -*-
 # importing symbols!!
 # NB: 'import' is provided by the runtime!
 ${:bc, $printf-specs} <= import('common')
@@ -7,15 +8,16 @@ ${:bc, $printf-specs} <= import('common')
 # NB: 'call-cmd' is provided by the runtime!
 # NB: Only intrinsics can be referenced without any sigil!
 # TODO: do all intrinsics only accept positional/keyword args (instead of being a production too?)?
+# ^I think actually, they can just be productions too! Just ones with hidden definitions (?)!
 :bc <= $arg => call-cmd(bc ; "$arg")
 
 # TODO: are productions the same as functions??? (YES!!! SEE THIS!!!)
-# NB: '$a: integer' is the same as '$a <= :integer'!
-# '<match-expr> = <match-expr type="lazy-eval" [<match-expr> => <eval-body>]> | <match-expr>'
+# [OUTDATED; INCORRECT] NB: '$a: integer' is the same as '$a <= :integer'!
+# '<match-expr> <= <match-expr type="lazy-eval" [<match-expr> => <eval-body>]> => <match-expr>'
 # NB: USING THE BACKSLASH AS IMPLICIT XARGS IS...I N C R E D I B L E!!!!!
 # NB: This '=>' construction can compile almost directly to a `while read -r`!
 :calculate <= ($a <= :integer ; $op ; $b: integer) => \:bc("$a$op$b")
-  | :integer
+  => :integer
 # equivalent:
 :calculate <= :integer <= ($a: integer ; $op ; $b: integer) => \:bc("${a}${op}${b}")
 # equivalent in "shell syntax":
@@ -35,14 +37,41 @@ function calculate() {
 # start defining productions!
 
 # TODO: are productions the same as types??? (WHY NOT???)
-:integer <= /[-+]?[0-9]+/ | (
-  # NB: | will have lower precedence than ;, and ',' will have lower precedence than anything (?).
-  # NB: first usage of '+<case-name>($params...)? <= <expr>,' (bind case) and '<variable-reference> => <eval-body>' (evaluate body after local variable is bound)!
+# /.../ has the type (str => str?). That's an optional `str?`, not a question mark.
+:integer <= /[-+]?[0-9]+/ => (
+  # NB: => will have lower precedence than ;, and ',' will have lower precedence than anything (?).
+  # NB: first usage of '+<case-name>($params...)? <= <expr>,' (bind case) and
+  # '<variable-reference> => <eval-body>' (evaluate body after local variable is bound)!
   # NB: `calculate()` is declared to return `:integer`, so this type-checks ok!
-  # NB: the backslash means calling the production with
-  +plus($x: integer) <= $_ => \:calculate($_ ; '+' ; $x),
-  # NB: The final trailing comma is non-optional!!!
-  +minus($x: integer) <= $_ => \:calculate($_ ; '-' ; $x),
+  # NB: the backslash means calling the production with specified arguments!
+  +plus($x <= integer) => \:calculate($_ ; '+' ; $x) ;
+  # equivalent to the above:
+  # $_ declares a matcher which accepts anything and passes it on unchanged, '-' and $x declare
+  # "constant matchers" which accept nothing and echo their literal output. So the expression
+  # ($_ ; '-' ; $x) has the type (T => (T, str, integer)), where T is inferred from the input.
+  +minus($x <= :integer) => ($_ ; '-' ; $x) => :calculate
+)
+# NB: The above is shorthand for the below!!
+# TODO: is ':string' optional (is it assumed unless specified?)?
+:integer <- (:string?)
+:integer <= :string => /[-+]?[0-9]+/
+# This is a type declaration for the below member functions.
+:integer <- (
+  +plus($x <- integer) -> :integer ;
+  +minus($x <- integer) -> :integer
+)
+:integer <= (
+  +plus($x <= integer) => \:calculate($_ ; '+'; $x) ;
+  +minus($x <= integer) => \:calculate($_ ; '-'; $x)
+)
+# ^Note that this also specifies a parseable declaration (and/or a curryable function!!!)!
+
+# The below asserts that there must be some value declaration somewhere (somewhere in this file?)
+# which satisfies (:float ->? :integer).
+:integer <- (:float?)
+# The parens here are redundant.
+:integer <= (
+  :float => ???
 )
 
 # Note with the above that:
@@ -54,7 +83,28 @@ function calculate() {
 # NB: attempt at a typed production manipulating typed subproductions!
 # NB: The '<= :integer' type annotation here is optional, as it is inferred from the ':integer'
 # return type of ':integer+plus($x: integer)'!
+# NB: '+' is a valid "type declaration" as well as a valid "value", because constants are singleton
+# types!!! (???)
+# NB: The below is an attempt at a "type declaration" for the "function" (?) ':add'!
+# NB: The '$_' in type declarations refers to an argument that's only relevant for parsing (aka
+# (right now) a constant value).
+:add <- ($a <- :integer ; $_ <- '+'; $b <- :integer) -> :integer
 :add <= :integer <= ($a:integer ; '+' ; $b:integer) => $a+plus($b)
+
+# TODO: constant values are ignored when calling a method as a function (and therefore only used in
+# parsing) -- is this what we want?
+
+# Equivalent formulations.
+$six <= \:add($a <= '2' ; $b <= '4')
+$six <= \:add('2' ; '4')
+$six <= ($a <= '2' ; $b <= '4') => :add
+# This type annotation is checked at compile time!
+$six <- :integer
+$six <= :add <= ($a <= '2' ; $b <= '4')
+# TODO: this uses integer literals, which are already tagged as an integer!
+$six <= \:add(2 ; 4)
+# This is also a valid way to write it!
+$six <= (2 ; 4):add
 
 # Modifying existing variables (associative array):
 $printf-specs+integer <= 'd'
@@ -63,48 +113,55 @@ $printf-specs+integer <= 'd'
 # This is probably better described as '<bind-expr> => <eval-body>'.
 # TODO: do this in a way such that only functions in this file are affected by this.
 # TOOD: make this syntax usable such that e.g. $printf-specs+integer can be *temporarily overridden within a production!!!*
-$printf-specs => (
+$printf-specs <= (
   # This nested initialization is like groovy!
-  +integer <= 'd',
+  +integer => 'd' ;
 )
 
-# The $six variable is defined in whatever the current scope is, and implicitly typed :integer!
+# The $six variable is defined in whatever the current scope is, and (without a type annotation)
+# implicitly typed :integer (in this case, since that's what '+plus' returns!)!
 $six <= '4':integer+plus('3')
 
+:port_num <- (:string? -> :integer)
 :port_num <= /[0-9]/:integer
 # equivalent to above:
-:port_num <= /[0-9]+/ | :integer
-# equivalent to above (demonstrating how destructuring/typing/everything goes together so naturally):
+# NB: the below is *not* ambiguous, specifically because we explicitly do not define any
+# "assignment" for the => operator. The <= only "assigns" when used at the leftmost of an
+# expression.
+:port_num <= /[0-9]+/ => :integer
+# Equivalent to above (demonstrating how destructuring/typing/everything goes together so
+# naturally):
 # TODO: is '<=' the inverse of '|'?
+# TO-DONE! yes! in fact, we have just removed '|' in favor of '=>'!!!
 :port_num <= :integer <= /[0-9]+/
 # equivalent to above
 function port_num() {
   sed -n -E -e '/^[0-9]+$/ p' | parse :integer # Where `parse` is from the prelude.
 }
 
+:port <- ($_ <- :string? ; $num <- (:port_num <- (:string? -> :integer)))
+:port <- ($_ <- :string? ; $num <- (:string? -> :integer))
 # the following line is in "match syntax"
-:port = ':' ; :port_num
+:port <= ':' ; $num <= :port_num
 # equivalent to above, but in "shell syntax":
 function port() {
   sed -n -E -e 's#^:(.*)$#\1#gp' | port_num
 }
 
 :file_or_https_scheme <= (
-  # Note the clever (unique?) usage of the comma here! These parentheses are optional!
-  # Because the comma is only used here, it can have super low precedence.
-  +was_file <= /file/,
-  +was_https <= /https/,
+  +file <= /file/ ;
+  +https <= /https/
 )
 # equivalent to above, but in "shell syntax":
 function __generated_method_1() {
-  local -r ctx="${1}+was_file"
+  local -r ctx="${1}+file"
   sed -n -E -e '/^file$/ p' | while read -r __generated_arg_1; do
     # NB: This is a command for an interpreter for a (stack machine?)!
     echo "${ctx}=${__generated_arg_1}"
   done
 }
 function __generated_method_2() {
-  local -r ctx="${1}+was_https"
+  local -r ctx="${1}+https"
   sed -n -E -e '/^https$/ p' | while read -r __generated_arg_2; do
     echo "${ctx}=${__generated_arg_2}"
   done
@@ -114,13 +171,98 @@ function file_or_https_scheme() {
   tee >(__generated_method_1 "$ctx") | __generated_method_2 "$ctx"
 }
 
-# NB: second usage of '<variable-reference> => <eval-body>', first usage of '+<case-name>($params...)? => <expr>,'.
-:file_or_https_url <= $validated_schema <= :url$scheme:file_or_https_scheme ; $host <= /[^\/]+/ ; $some_port_num <= $validated_schema => (
-  +was_file => :port:port_num,
-  +was_https => :port:port_num ? 443,
-) ; ('/' ; ...)?
+# NB: second usage of '<variable-reference> => <eval-body>',
+# first usage of '+<case-name>($params...)? => <expr>,'.
+:file_or_https_url <= :url =>
+  ($validated_schema <= $scheme:file_or_https_scheme) ;
+  $host <= /[^\/]+/ ;
+  # `$validated_schema` will definitely have been defined already, as it must have been previously
+  # satisfied within a sequential match ordering (via ';'), so we are allowed to dereference/use its
+  # value here.
+  # '=>' has lower precedence than '<='.
+  ($some_port_num <= $validated_schema => (
+    +file => :port$num ;
+    # NB: Each of the below are equivalent formulations of a type annotation for this case!
+    +https -> ($_ <- :string? ; $num <- (:string? -> :integer)) -> (? -> :integer) ;
+    +https -> (:string? ; (:string? -> :integer)) -> (? -> :integer) ;
+    # NB: Note that the ':string?' is "canceled" by the '(? -> :integer)', which recovers from match
+    # failures (!!!!!!).
+    +https -> :string -> :integer ;
+    +https => :port$num ? 443
+  )) ;
+  # The below is only used for parsing, not when calling it as a function!
+  # (:string? ; :string) -> (? -> '')
+  ('/' ; :string...)?
 
+
+:add-all <- ($x <- :integer...) -> ($sum <- :integer) -> :integer
+# This below type signature is a little simplified -- it doesn't have the complete signature of the
+# method (since it doesn't describe the type of '$sum', a variable defined within the method), but
+# it *would* pass typechecking to add this type annotation, since it is a subset of the real
+# signature.
+:add-all <- ($x <- :integer...) -> :integer
+:add-all <= ($x <= :integer...) => ($sum <= 0 ; $sum <= $sum+plus($x)...) => $sum
+
+$seven <= \:add-all(1 ; 2 ; 4)
+
+# '+(:integer -> :integer) is how to represent an associative mapping!
+:count-occurrences <- :integer... -> +(:integer -> :integer)
+# The below type annotation is also correct, but more general.
+:count-occurrences <- :integer... -> (:integer -> :integer)
+# '+()' creates an empty mapping.
+:count-occurrences <= ($result <= +() ;
+                       ($result+($x) <= $result+($x <= :integer...)+plus(1) ? 1)...)
+  => $result
+# This is equivalent to the above!
+:count-occurrences <= (
+  # NB: note the inline type annotation here!
+  $result <= +() <- +(:integer -> :integer) ;
+  $x <= :integer... ;
+  ($result+($x) <= $result+($x)+plus(1) ? 1)...
+  )
+  => $result
+
+$occurrences <- +(:integer -> :integer)
+$occurrences <= \:count-occurrences(1 ; 2 ; 4 ; 5 ; 1 ; 4; 2 ; 1)
+
+# Just an idle thought -- a mapping is a function with a finite input domain.
+# Not sure if this definition is provided by the prelude, or whether users can define such a
+# relation...
+# FIXME: is declaring a datatype and a function the same thing???? could it be???
++(:integer -> :integer) <= ($f <= (:integer -> :integer) ; $keys <= :integer...)
+# This could be a possible way to allow users to define the destructuring operation '+($k <= $v)'.
++(:integer -> :integer) <= (
+  # NB: the '<=' arrow is used here, which indicates an "unapply" (destructuring) is being defined
+  # instead of an "apply" (function application).
+  # '$keys' and '$f' are in scope, because they were in the above definition of +(:integer ->
+  # :integer).
+  # FIXME: this smight need to have a name...
+  +($k <= $v)... <= $keys => ($k <= :integer ; $v <= \$f($k))...
+)
+
+
++(:integer -> :integer) <= (
+  # These type annotations are equivalent.
+  +get-single-occurrences -> +(:integer <- :integer)... -> ? -> :integer...
+  +get-single-occurrences -> +(:integer <- :integer)... -> :integer...
+  # FIXME: figure out how to define ':integer+equals(:integer)'!!! (which returns '?')!?
+  +get-single-occurrences => +($k <= $v)... => $v+equals(1) => $k...
+)
+# Alternative type annotation for the above
++(:integer => :integer)+get-single-occurrences <- +(:integer -> :integer) -> :integer...
+
+$single-occurences <= $occurrences+get-single-occurrences
+# Where (:integer...)+equals(:integer...) <- ?
+# NB: The '!' is very important here! It creates an error if there is no match (instead of quietly
+# continuing with trying to match something).
+# TODO: what kind of error? Is this fatal? I think yes, since we're going for an "assert!()" kind of
+# vibe. The exclamation point is a good token to use here, but it's not clear whether we want
+# first-class support for this "assert!()" kind of vibe.
+$single-occurrences+equals(5) !
+
+
+# TODO: can we just use '+' for all conditional logic????????????
 
 
 # code?
-${$schema <= $validated_schema, $port_num <= $some_port_num} <= $1:file_or_https_scheme
+($schema <= $validated_schema ; $port_num <= $some_port_num) <= $1:file_or_https_scheme
