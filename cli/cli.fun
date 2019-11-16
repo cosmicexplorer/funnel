@@ -1,25 +1,75 @@
 # -*- mode: zsh -*-
+
+# TODO:
+# (1) Consider whether this can be implemented with common lisp + reader macros (or something???)!
+# (2) Consider whether simultaneous-productions can be used directly as a *runtime* for this logic!
+#   - Similarly, consider whether then that this language leads to a very direct encoding of
+#     simultaneous-productions as a Turing-complete computation mechanism!
+
+# FIXME: Functions shouldn't return values (except MAYBE) -- they can bind values to variables! We
+# can perhaps establish a convention of '$_' or something as a single positional arg / single
+# positional return arg (everything else is accessed by keyword). This would also mean that
+# "function application" and "destructuring" basically become the same.
+
+# For example, a '+mean' method could bind not just the arithmetic mean of a series of integers, but
+# could also export the sum of those integers which was used to calculate it!
+# This is the basic type signature that will only export the single return value.
+:integer...+mean <- :integer
+# This signature will export the sum of the values, as well as the number of values in the stream!
+# NB: A type signature like this is *required* to export any non-'$_' variable from a function!
+# It's also possible to export types from a function by assigning to a ':'-prefixed symbol (instead
+# of a '$'-prefixed symbol). More experimentation upcoming!!
+:integer...+mean <- ($sum <- :integer ; $num-values <- :integer ; :integer)
+:integer...+mean <= (
+  $sum <= 0 ;
+  $num-values <= 0;
+  ($sum <= $sum+plus($_) ;
+   $num-values <= $num-values+plus(1)
+  )... ;
+  $_ <= $sum+divide($num-values)
+)
+# Alternative nested definition, same as above.
+:integer... <= (
+  +mean => ???
+)
+
+$integer-values <- :integer...
+$integer-values <= (1 ; 3 ; 5 ; 2 ; 1)
+
+# Example of destructuring to bind the result of a method which has exported non-'$_' variables!
+($integer-sum <= $sum ; $num-elements <= $num-values ; $mean <= $_) <= $integer-values+mean
+# '!' is still-experimental syntax to force an "assertion" for '?'-typed output (is '?' a type????)!
+$integer-sum+equals(12) !
+$num-elements+equals(5) !
+# This is integer division!
+$mean+equals(2) !
+
+# If not destructured by opening a scope (using parentheses, as above), the value of '$_' is assumed
+# to be used!
+$integer-values+mean+equals(2) !
+
+
 # importing symbols!!
 # NB: 'import' is provided by the runtime!
-${:bc, $printf-specs} <= import('common')
+(:bc, $printf-specs) <= import('common')
 
 # defining functions (different syntax than variables and productions!!!)
 # wrapping shell functions (redefining :bc from above):
 # NB: 'call-cmd' is provided by the runtime!
-# NB: Only intrinsics can be referenced without any sigil!
+# NB: Only intrinsics can be referenced without any sigil (???)!
 # TODO: do all intrinsics only accept positional/keyword args (instead of being a production too?)?
 # ^I think actually, they can just be productions too! Just ones with hidden definitions (?)!
-:bc <= $arg => call-cmd(bc ; "$arg")
+:bc <= ($arg <= :string) => call-cmd(bc ; "$arg")
 
 # TODO: are productions the same as functions??? (YES!!! SEE THIS!!!)
-# [OUTDATED; INCORRECT] NB: '$a: integer' is the same as '$a <= :integer'!
+# [OUTDATED; INCORRECT] NB: '$a <= :integer' is the same as '$a <= :integer'!
 # '<match-expr> <= <match-expr type="lazy-eval" [<match-expr> => <eval-body>]> => <match-expr>'
-# NB: USING THE BACKSLASH AS IMPLICIT XARGS IS...I N C R E D I B L E!!!!!
+# NB[OUTDATED; INCORRECT]: USING THE BACKSLASH AS IMPLICIT XARGS IS...I N C R E D I B L E!!!!!
 # NB: This '=>' construction can compile almost directly to a `while read -r`!
-:calculate <= ($a <= :integer ; $op ; $b: integer) => \:bc("$a$op$b")
+:calculate <= ($a <= :integer ; $op ; $b <= :integer) => :bc("$a$op$b")
   => :integer
 # equivalent:
-:calculate <= :integer <= ($a: integer ; $op ; $b: integer) => \:bc("${a}${op}${b}")
+:calculate <= :integer <= ($a <= :integer ; $op ; $b <= :integer) => \:bc("${a}${op}${b}")
 # equivalent in "shell syntax":
 function calculate() {
   # FIXME: if any of these fail, the function should fail with an error!
@@ -44,7 +94,7 @@ function calculate() {
   # '<variable-reference> => <eval-body>' (evaluate body after local variable is bound)!
   # NB: `calculate()` is declared to return `:integer`, so this type-checks ok!
   # NB: the backslash means calling the production with specified arguments!
-  +plus($x <= integer) => \:calculate($_ ; '+' ; $x) ;
+  +plus($x <= :integer) => \:calculate($_ ; '+' ; $x) ;
   # equivalent to the above:
   # $_ declares a matcher which accepts anything and passes it on unchanged, '-' and $x declare
   # "constant matchers" which accept nothing and echo their literal output. So the expression
@@ -57,12 +107,13 @@ function calculate() {
 :integer <= :string => /[-+]?[0-9]+/
 # This is a type declaration for the below member functions.
 :integer <- (
-  +plus($x <- integer) -> :integer ;
-  +minus($x <- integer) -> :integer
+  +plus($x <- :integer) -> :integer ;
+  +minus($x <- :integer) -> :integer
 )
 :integer <= (
-  +plus($x <= integer) => \:calculate($_ ; '+'; $x) ;
-  +minus($x <= integer) => \:calculate($_ ; '-'; $x)
+  +plus($x <= :integer) => :calculate($_ ; '+'; $x) ;
+  +minus($x <= :integer) => :calculate($_ ; '-'; $x) ;
+  +divide($x <= :integer) => :calculate($_ ; '/' ; $x)
 )
 # ^Note that this also specifies a parseable declaration (and/or a curryable function!!!)!
 
@@ -82,7 +133,7 @@ function calculate() {
 
 # NB: attempt at a typed production manipulating typed subproductions!
 # NB: The '<= :integer' type annotation here is optional, as it is inferred from the ':integer'
-# return type of ':integer+plus($x: integer)'!
+# return type of ':integer+plus($x <= :integer)'!
 # NB: '+' is a valid "type declaration" as well as a valid "value", because constants are singleton
 # types!!! (???)
 # NB: The below is an attempt at a "type declaration" for the "function" (?) ':add'!
@@ -205,19 +256,24 @@ function file_or_https_scheme() {
 
 $seven <= \:add-all(1 ; 2 ; 4)
 
-# '+(:integer -> :integer) is how to represent an associative mapping!
-:count-occurrences <- :integer... -> +(:integer -> :integer)
+# '+(:integer -> :integer)' is how to represent an associative mapping (???)!
+(:count-occurrences <- (:k)) <- (:k... -> +(:k -> :integer))
 # The below type annotation is also correct, but more general.
-:count-occurrences <- :integer... -> (:integer -> :integer)
+(:count-occurrences <- (:k)) <- (:k... -> (:k -> :integer))
 # '+()' creates an empty mapping.
-:count-occurrences <= ($result <= +() ;
-                       ($result+($x) <= $result+($x <= :integer...)+plus(1) ? 1)...)
+# We declare a type parameter ':k', which we then assign to the '+()'. We could have written
+# '+() <= (:k <- :k)' -- this is just shorthand for that because ':k' and ':k' are named the same.
+# We know that ':count-occurrences <- (:k)' declares a type parameter, while '+() <- (:k)'
+# dereferences that type parameter, because type parameters can only be declared at the top level
+# (...maybe. We may be missing some cases but I think this is a good start.).
+:count-occurrences <- (:k) <= ($result <= +() <- (:k ; :v <- :integer);
+                               ($result+($x) <= $result+($x <= :k...)+plus(1) ? 1)...)
   => $result
 # This is equivalent to the above!
-:count-occurrences <= (
+:count-occurrences <- (:k) <= (
   # NB: note the inline type annotation here!
-  $result <= +() <- +(:integer -> :integer) ;
-  $x <= :integer... ;
+  $result <= +() <- (:k <- :k ; :v <- :integer) ;
+  $x <= :k... ;
   ($result+($x) <= $result+($x)+plus(1) ? 1)...
   )
   => $result
@@ -229,27 +285,45 @@ $occurrences <= \:count-occurrences(1 ; 2 ; 4 ; 5 ; 1 ; 4; 2 ; 1)
 # Not sure if this definition is provided by the prelude, or whether users can define such a
 # relation...
 # FIXME: is declaring a datatype and a function the same thing???? could it be???
-+(:integer -> :integer) <= ($f <= (:integer -> :integer) ; $keys <= :integer...)
-# This could be a possible way to allow users to define the destructuring operation '+($k <= $v)'.
-+(:integer -> :integer) <= (
-  # NB: the '<=' arrow is used here, which indicates an "unapply" (destructuring) is being defined
-  # instead of an "apply" (function application).
-  # '$keys' and '$f' are in scope, because they were in the above definition of +(:integer ->
-  # :integer).
-  # FIXME: this smight need to have a name...
-  +($k <= $v)... <= $keys => ($k <= :integer ; $v <= \$f($k))...
+# NB: This function takes two type parameters!!! ISN'T THIS IT????
+:map <- (:k ; :v) -> ($f <- (:k -> :v) ; $keys <- +(:k...))
+# '+(:k...)' says "take a stream of ':k', and convert it into a set!"! The exact same expression
+# works above on the type level with '$keys <- +(:k...)'!
+:map <= ($f <= (:k => :v) ; $keys <= +(:k...))
+:map <= (
+  +($k <= $v)... <= $keys => ($k <= :k ; $v <= \$f($k))...
 )
 
+:map => (
+  +partial-function -> (:k -> :v?) <= :k => ($keys => (
+    +($_)
+  ))
+)
 
-+(:integer -> :integer) <= (
-  # These type annotations are equivalent.
-  +get-single-occurrences -> +(:integer <- :integer)... -> ? -> :integer...
-  +get-single-occurrences -> +(:integer <- :integer)... -> :integer...
+# This could be a possible way to allow users to define the destructuring operation '+($k <= $v)'
+# (used below in the '+get-single-occurrences' case!!!).
+:map <= (
+  # NB: the '<=' arrow is used here, which indicates an "unapply" (destructuring) is being defined
+  # instead of an "apply" (function application).
+  # ^!!!!!!!!! REALLY GOOD IDEA!!!!
+  # '$keys' and '$f' were brought into scope by virtue of being declared in the above definition of
+  # +(:integer -> :integer).
+  +($k <= $v)... <= $keys => ($k <= :k ; $v <= \$f($k))...
+)
+
+# This declares a method only on the specialization of :map for the type parameter
+# ':v <- :integer'. This specialization is intended to look like a function call (which is only
+# being partially evaluated -- the ':k' is still unbound (i.e. curried)).
+:map(:v <- :integer) <= (
+  # These type annotations are equivalent, because '...' subsumes '?' here.
+  +get-single-occurrences -> :_ -> ? -> :integer...
+  +get-single-occurrences -> :_ -> :integer...
   # FIXME: figure out how to define ':integer+equals(:integer)'!!! (which returns '?')!?
   +get-single-occurrences => +($k <= $v)... => $v+equals(1) => $k...
 )
-# Alternative type annotation for the above
-+(:integer => :integer)+get-single-occurrences <- +(:integer -> :integer) -> :integer...
+# Alternative type annotation for the above.
+# ':_' here means "whatever type I'm currently assigning to at the top level".
+:map(:v <- :integer)+get-single-occurrences <- (:_ -> :integer...)
 
 $single-occurences <= $occurrences+get-single-occurrences
 # Where (:integer...)+equals(:integer...) <- ?
