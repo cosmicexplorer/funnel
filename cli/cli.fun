@@ -19,7 +19,7 @@
 # NB: A type signature like this is *required* to export any non-'$_' variable from a function!
 # It's also possible to export types from a function by assigning to a ':'-prefixed symbol (instead
 # of a '$'-prefixed symbol). More experimentation upcoming!!
-:integer...+mean <- ($sum <- :integer ; $num-values <- :integer ; :integer)
+:integer...+mean <- ($sum <- :integer ; $num-values <- :integer ; $_ <- :integer)
 :integer...+mean <= (
   $sum <= 0 ;
   $num-values <= 0;
