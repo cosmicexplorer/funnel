@@ -1,3 +1,5 @@
 /.pants.d/
-/.pants.workdir.file_lock
+/.pants.workdir.file_lock*
 /logs/
+/.cache/
+/.pids/
