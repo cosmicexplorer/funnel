@@ -1,5 +1,28 @@
 # -*- mode: zsh -*-
 
+# Syntax:
+# (1) <=, =>, <-, and -> are operators. <= and => imply that their source is a *value*, while <- and
+#     -> imply that their source is a *type*. <= and <- *assign*, while -> and => create a named
+#     parameter.
+# (2) <- and -> have higher precedence than <= and =>. Parentheses are used to make meaning more
+#     obvious.
+# (3) Structs and enums are defined with :type-name <= ($x, $y, ...). See the definitions of :point
+#     and :list (which has a type parameter) below. Note that structs CANNOT be declared using the
+#     <- arrow at all right now. Enum cases are denoted with +, and struct fields with $.
+# (4) Variables (including functions) are declared with $var <= (...). See the definition of $mean
+#     below. Note that variables can also have type declarations on a separate line than the value
+#     assignment.
+# (5) Typeclasses are declared with &typeclass <= ($x ; $y; ...). See the definition of &countable
+#     below. Typeclasses are implemented with the <= arrow as well -- see &countable:integer
+#     below.
+# (6) Type signatures can require a type implement a typeclass with ($x <- &typeclass). Type
+#     signatures can explicitly get the type of $x with ($x-type <- &typeclass) -> ($x <- $x-type).
+# (7) $x:y is shorthand for ($x <- :y). $x$y is shorthand for ($x <- $y), when $y is a type
+#     variable.
+# (8) Identifiers may contain hyphens.
+# (9) ($x, $y) -> $z is shorthand for $x -> $y -> $z.
+# (10) $f($x, $y) is shorthand for $f <= $x <= $y.
+
 # TODO:
 # (1) Consider whether this can be implemented with common lisp + reader macros (or something???)!
 # (2) Consider whether simultaneous-productions can be used directly as a *runtime* for this logic!
@@ -11,33 +34,152 @@
 # positional return arg (everything else is accessed by keyword). This would also mean that
 # "function application" and "destructuring" basically become the same.
 
-# For example, a '+mean' method could bind not just the arithmetic mean of a series of integers, but
+# :integer is a builtin.
+
+# For example, a '$mean' method could bind not just the arithmetic mean of a series of integers, but
 # could also export the sum of those integers which was used to calculate it!
 # This is the basic type signature that will only export the single return value.
-:integer...+mean <- :integer
+$mean <- ($input <- :integer...) -> :integer
 # This signature will export the sum of the values, as well as the number of values in the stream!
 # NB: A type signature like this is *required* to export any non-'$_' variable from a function!
 # It's also possible to export types from a function by assigning to a ':'-prefixed symbol (instead
 # of a '$'-prefixed symbol). More experimentation upcoming!!
-:integer...+mean <- ($sum <- :integer ; $num-values <- :integer ; $_ <- :integer)
-:integer...+mean <= (
-  $sum <= 0 ;
-  $num-values <= 0;
-  ($sum <= $sum+plus($_) ;
-   $num-values <= $num-values+plus(1)
-  )... ;
+$mean <- ($input <- :integer...) -> (
+  $sum <- :integer,
+  $num-values <- :integer,
+  $_ <- :integer
+)
+# Note that in Smalltalk, the ^ is used to mean "return" -- see
+# https://en.wikipedia.org/wiki/Smalltalk.
+$mean <= ($input <- :integer...) => (
+  $sum:integer <= 0 ;
+  $num-values:integer <= 0 ;
+  # This performs the following statements for all elements in the $input stream. Each element is
+  # assigned to the temporary variable $_.
+  $input...(
+    # This is the same as `$sum <= ($plus($_ <= $_))`.
+    $sum <= $plus($sum, $_) ;
+    # This is the same as `$num-values <= ($num-values+plus($_ <= 1))`.
+    $num-values <= $plus($num-values, 1)
+  );
   $_ <= $sum+divide($num-values)
 )
-# Alternative nested definition, same as above.
-:integer... <= (
-  +mean => ???
+
+# How to specify a typeclass (or something???): use &!
+# Specify a type parameter $operand-type satisfying the &countable typeclass. Then specify a method
+# parameter $input, which is a stream of $operand-type.
+$mean <= ($operand-type <- &countable) -> ($input <- $operand-type...) => (
+  $sum <= ($zero <- $operand-type);
+  $num-values:integer <= 0;
+  $input...(
+    $sum <= $plus($sum, $_);
+    $num-values <= $plus($num-values, 1)
+  );
+  $_ <= $divide($sum, $num-values)
+)
+# Could be shortened to:
+$mean <= ($input <- &countable...) => (
+  # (type inference)
+  $sum <= $zero;
+  $num-values:natural <= 0;
+  $input...(
+    $sum @<+= $_;
+    $num-values @<+= 1
+  );
+  $_ <= $divide($sum, $num-values)
 )
 
-$integer-values <- :integer...
-$integer-values <= (1 ; 3 ; 5 ; 2 ; 1)
+# Declaring a typeclass &countable, with a type parameter $type, with several operations (note that
+# the <= arrow is used to declare a typeclass -- the -> arrow here declares a type parameter $type).
+&countable <= $type -> (
+  # Note that there is no difference between a value and a zero-argument function (???)???
+  $zero <- $type;
+  $plus <- ($lhs <- $type) -> ($rhs <- $type) -> $type
+)
+# Could be shortened to:
+&countable <= $type -> (
+  $zero <- $type;
+  $plus <- ($lhs$type, $rhs$type) -> $type
+)
+
+# Implementing &countable for the type :integer (note that the <= arrow is used to implement a
+# typeclass -- the <- arrow binds :integer to the type parameter $type).
+# Note that <- has higher precedence than <=, so parens around (&countable <- :integer) are not
+# needed.
+&countable <- :integer <= (
+  $zero <= 0L;
+  # NB: Assumed that $integer-add is somehow provided by the prelude.
+  $plus <= ($lhs:integer, $rhs:integer) => $integer-add($lhs, $rhs)
+)
+# Could be shortened to:
+&countable:integer <= (
+  $zero <= 0L;
+  # (due to type inference)
+  $plus <= ($lhs, $rhs) => $integer-add($lhs, $rhs)
+)
+
+# Bikesheddable struct/enum class declaration syntax.
+:point <= ($x <- :integer) => ($y <- :integer) => (
+  $x:integer <= $x,
+  $y:integer <= $y
+)
+# Could be shortened to:
+:point <= ($x:integer, $y:integer)
+
+# NB: $element is a type variable!! Hence being manipulated with ->!
+:list <= $element -> (
+  +none,
+  # NB: $Self is a type variable!! Hence being dereferenced with <-!
+  +cons($car <- $element, $cdr <- $Self)
+)
+# Could be shortened to:
+:list <= $element -> (
+  +none,
+  +cons($car$element, $cdr$Self)
+)
+
+# Note that this expression:
+$Args <- :list$element
+# Is equivalent to (dereferencing the free type variable $element, and then assigning it to the
+# named type variable $element of the :list struct):
+$Args <- (:list <- ($element <- $element))
+
+# @make-list is an attempt to define a macro syntax????
+# ($Args... / ";") expands (at macro time) a parameter pack to match a sequence of inputs separated
+# according to the arguments (in this case, by a semicolon). If $Args is a :list$? like here, the
+# macro accepts only positional, and not named arguments.
+# NB: This attempt at a macro is a little underwhelming, as it requires ($Args... / ";") to be
+# implemented as a special form.
+@make-list <= $element -> ($Args <- :list$element) => ($Args... / ";")
+
+$integer-values <- :list <- ($element <- :integer)
+# Could be shortened to:
+$integer-values <- :list$element:integer
+# Invoke the macro @make-list<&element, &Args...<- &element>, inferring parameter pack matching.
+$integer-values <= @make-list(1 ; 3 ; 5 ; 2 ; 1)
+
+# Attempted infix @<+= operator:
+@`<+=` <= ($operand-type <- &countable) -> ($lhs$operand-type, $rhs$operand-type)
+  # NB: People say type-safe macros are VERY HARD TO IMPLEMENT!!!!
+  # @=> attempts to bind a possibly-typechecked parameter specification to the arguments provided to
+  # the macro. In this case, there will be two arguments since it is an infix operator.
+  @=> ($lhs <= $plus($lhs, $rhs))
+# Could be shortened to:
+@`<+=` <= ($op&countable, $lhs$op, $rhs$op) @=> ($lhs <= $plus($lhs, $rhs))
+# Could be turned non-typechecked with:
+@`<+=` <= ($lhs, $rhs) @=> ($lhs <= $plus($lhs, $rhs))
+# Usage:
+$x <= 4    # x is now 4
+$x @<+= 1  # x is now 5
+
+# Another example method:
+$f <= ($op&countable, $x$op, $y$op) => $plus($x, $y)
+# While this is often done implicitly, we can index into the specific type parameter $op as needed.
+($f <- :integer) <= (1, 2)  # => 3
+
 
 # Example of destructuring to bind the result of a method which has exported non-'$_' variables!
-($integer-sum <= $sum ; $num-elements <= $num-values ; $mean <= $_) <= $integer-values+mean
+($integer-sum <= $sum, $num-elements <= $num-values, $mean <= $_) <= $integer-values+mean
 # '!' is still-experimental syntax to force an "assertion" for '?'-typed output (is '?' a type????)!
 $integer-sum+equals(12) !
 $num-elements+equals(5) !
@@ -340,3 +482,6 @@ $single-occurrences+equals(5) !
 
 # code?
 ($schema <= $validated_schema ; $port_num <= $some_port_num) <= $1:file_or_https_scheme
+
+# https://blog.golang.org/a-new-go-api-for-protocol-buffers
+# go uses f().(*X) to "type assert" that function f returns the type X at runtime.
