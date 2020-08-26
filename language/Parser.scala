@@ -1,5 +1,5 @@
 package funnel
 
-object X {
-  def f: Int = 3
+object Main extends App {
+  println("wow")
 }
