@@ -8,16 +8,16 @@
 #     obvious.
 # (3) Structs and enums are defined with :type-name <= ($x, $y, ...). See the definitions of :point
 #     and :list (which has a type parameter) below. Note that structs CANNOT be declared using the
-#     <- arrow at all right now. Enum cases are denoted with +, and struct fields with $.
+#     <- arrow at all right now. Enum cases are denoted with +, and struct fields with the dot `.`.
 # (4) Variables (including functions) are declared with $var <= (...). See the definition of $mean
-#     below. Note that variables can also have type declarations on a separate line than the value
-#     assignment.
-# (5) Typeclasses are declared with &typeclass <= ($x ; $y; ...). See the definition of &countable
+#     below. Note that variables may NOT have any type declarations on a separate line than the
+#     value assignment.
+# (5) Typeclasses are declared with &typeclass <= (:x ; :y; ...). See the definition of &countable
 #     below. Typeclasses are implemented with the <= arrow as well -- see &countable:integer
 #     below.
-# (6) Type signatures can require a type implement a typeclass with ($x <- &typeclass). Type
-#     signatures can explicitly get the type of $x with ($x-type <- &typeclass) -> ($x <- $x-type).
-# (7) $x:y is shorthand for ($x <- :y). $x$y is shorthand for ($x <- $y), when $y is a type
+# (6) Type signatures can require a type implement a typeclass with (:x <- &typeclass). Type
+#     signatures can explicitly get the type of $x with (:x-type <- &typeclass) -> ($x <- :x-type).
+# (7) $x:y is shorthand for ($x <- :y). $x:y is shorthand for ($x <- :y), where :y is a type
 #     variable.
 # (8) Identifiers may contain hyphens.
 # (9) ($x, $y) -> $z is shorthand for $x -> $y -> $z.
@@ -118,31 +118,27 @@ $mean <= ($input <- &countable...) => (
   $plus <= ($lhs, $rhs) => $integer-add($lhs, $rhs)
 )
 
-# Bikesheddable struct/enum class declaration syntax.
-:point <= ($x <- :integer) => ($y <- :integer) => (
-  $x:integer <= $x,
-  $y:integer <= $y
-)
-# Could be shortened to:
-:point <= ($x:integer, $y:integer)
+# Bikesheddable struct/enum class declaration syntax. All constructor arguments automatically become
+# the named struct fields!
+:point <= (.x:integer, .y:integer)
 
-# NB: $element is a type variable!! Hence being manipulated with ->!
-:list <= $element -> (
+# NB: :element is a type variable!! Hence being manipulated with ->!
+:list <= :element -> (
   +none,
-  # NB: $Self is a type variable!! Hence being dereferenced with <-!
-  +cons($car <- $element, $cdr <- $Self)
+  # NB: :Self is a type variable!! Hence being dereferenced with <-!
+  +cons(.car <- :element, .cdr <- :Self)
 )
 # Could be shortened to:
-:list <= $element -> (
+:list <= :element -> (
   +none,
-  +cons($car$element, $cdr$Self)
+  +cons(.car:element, .cdr:Self)
 )
 
 # Note that this expression:
-$Args <- :list$element
-# Is equivalent to (dereferencing the free type variable $element, and then assigning it to the
-# named type variable $element of the :list struct):
-$Args <- (:list <- ($element <- $element))
+$Args <- :list:element
+# Is equivalent to (dereferencing the free type variable :element, and then assigning it to the
+# named type variable :element of the :list struct):
+$Args <- (:list <- (:element <- :element))
 
 # @make-list is an attempt to define a macro syntax????
 # ($Args... / ";") expands (at macro time) a parameter pack to match a sequence of inputs separated
@@ -150,33 +146,68 @@ $Args <- (:list <- ($element <- $element))
 # macro accepts only positional, and not named arguments.
 # NB: This attempt at a macro is a little underwhelming, as it requires ($Args... / ";") to be
 # implemented as a special form.
-@make-list <= $element -> ($Args <- :list$element) => ($Args... / ";")
+@make-list <= :element -> ($Args <- :list:element) => ($Args... / ";")
 
-$integer-values <- :list <- ($element <- :integer)
+$integer-values <- :list <- (:element <- :integer)
 # Could be shortened to:
-$integer-values <- :list$element:integer
+$integer-values <- :list(:integer)
 # Invoke the macro @make-list<&element, &Args...<- &element>, inferring parameter pack matching.
 $integer-values <= @make-list(1 ; 3 ; 5 ; 2 ; 1)
 
 # Attempted infix @<+= operator:
-@`<+=` <= ($operand-type <- &countable) -> ($lhs$operand-type, $rhs$operand-type)
+@`<+=` <~ ((:operand-type <- &countable) -> ($lhs:operand-type, $rhs:operand-type)
   # NB: People say type-safe macros are VERY HARD TO IMPLEMENT!!!!
   # @=> attempts to bind a possibly-typechecked parameter specification to the arguments provided to
   # the macro. In this case, there will be two arguments since it is an infix operator.
-  @=> ($lhs <= $plus($lhs, $rhs))
+  @=> ($lhs <= $plus($lhs, $rhs)))
 # Could be shortened to:
-@`<+=` <= ($op&countable, $lhs$op, $rhs$op) @=> ($lhs <= $plus($lhs, $rhs))
+@`<+=` <~ ((:op&countable, $lhs:op, $rhs:op) @=> ($lhs <= $plus($lhs, $rhs)))
 # Could be turned non-typechecked with:
-@`<+=` <= ($lhs, $rhs) @=> ($lhs <= $plus($lhs, $rhs))
+@`<+=` <~ (($lhs, $rhs) @=> ($lhs <= $plus($lhs, $rhs)))
 # Usage:
 $x <= 4    # x is now 4
 $x @<+= 1  # x is now 5
 
 # Another example method:
-$f <= ($op&countable, $x$op, $y$op) => $plus($x, $y)
+$f <= (:op&countable, $x:op, $y:op) => $plus($x, $y)
 # While this is often done implicitly, we can index into the specific type parameter $op as needed.
-($f <- :integer) <= (1, 2)  # => 3
+$x <= ($f <- :integer) <= (1, 2)  # => x is now 3
 
+
+@a-macro <~ (
+  ($x:integer => $y:integer) @=> $integer-plus($x, $y);
+  $z:string @=> $concat($z, $z);
+  dynamic => $parse
+)
+
+
+:boolean <= (
+  +true,
+  +false
+)
+
+&hashable <= $type -> (
+  $hash <- $type -> :integer;
+  $equals <- ($lhs$type, $rhs$type) -> :boolean
+)
+
+&hashable:integer <= (
+  $hash <= $_:integer => $_;
+  $equals <= ($lhs:integer, $rhs:integer) => $integer-equals($lhs, $rhs)
+)
+
+# This *could* work as a map, but doesn't have any working methods yet.
+:map <= [:k&hashable, :v] -> (.pairs:list(:element <- (:k, :v)))
+
+$the-map <= :map[:integer, :integer]((1L, 1L) ; (2L, 4L))
+
+$get <= [:k&hashable, :v] -> $map:map[:k, :v] => $key:k => (
+  $the-hash <= $hash($key);
+  ($_, $value) <= @list-get($map.pairs $the-hash);
+  ^$value:v
+)
+
+$value <= $get($the-map, 2L)  # => 4L
 
 # Example of destructuring to bind the result of a method which has exported non-'$_' variables!
 ($integer-sum <= $sum, $num-elements <= $num-values, $mean <= $_) <= $integer-values+mean
