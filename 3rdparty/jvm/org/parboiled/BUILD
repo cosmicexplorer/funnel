@@ -1,5 +1,5 @@
 jar_library(
   jars=[
-    scala_jar(org='org.parboiled', name='parboiled-scala', rev='1.3.1'),
+    scala_jar(org='org.parboiled', name='parboiled', rev='2.2.0'),
   ],
 )

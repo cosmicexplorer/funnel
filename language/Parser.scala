@@ -1,11 +1,11 @@
 package funnel.language
 
-import org.parboiled.scala._
+import org.parboiled2._
 
-
-class FunnelPEG extends Parser {
+class FunnelPEG(override val input: ParserInput) extends Parser {
   // Define AST entities.
   case class IdentifierWrapper(name: String)
+  case class VarWrapper(id: IdentifierWrapper)
   case class TypeWrapper(id: IdentifierWrapper)
   case class TypeclassWrapper(id: IdentifierWrapper)
 
@@ -30,31 +30,42 @@ class FunnelPEG extends Parser {
 
   // case class MacroOperator extends Expression
 
-  sealed abstract class PlaceExpression extends Expression
+  sealed abstract class PlaceExpression[T] extends Expression {
+    def getTarget: T
+  }
 
-  sealed abstract class ValuePlaceExpression extends PlaceExpression
-  case class VarPlace(id: IdentifierWrapper) extends ValuePlaceExpression
+  sealed abstract class ValuePlaceExpression(varWrapper: VarWrapper)
+      extends PlaceExpression[VarWrapper] {
+    override val getTarget = varWrapper
+  }
+  case class VarPlace(varWrapper: VarWrapper) extends ValuePlaceExpression(varWrapper)
 
-  sealed abstract class TypePlaceExpression(constraint: Option[TypeExpression]) extends PlaceExpression
+  sealed abstract class TypePlaceExpression(ty: TypeWrapper, constraint: Option[TypeExpression])
+      extends PlaceExpression[TypeWrapper] {
+    override val getTarget = ty
+  }
   case class TypePlace(ty: TypeWrapper, constraint: Option[TypeExpression])
-      extends TypePlaceExpression(constraint)
+      extends TypePlaceExpression(ty, constraint)
   case class TypePlaceWithParams(
     ty: TypeWrapper,
     constraint: Option[TypeExpression],
     tpp: TypeParameterPack
-  ) extends TypePlaceExpression(constraint)
+  ) extends TypePlaceExpression(ty, constraint)
 
-  sealed abstract class TypeclassPlaceExpression(constraint: Option[TypeExpression]) extends PlaceExpression
+  sealed abstract class TypeclassPlaceExpression(tyc: TypeclassWrapper, constraint: Option[TypeExpression])
+      extends PlaceExpression[TypeclassWrapper] {
+    override val getTarget = tyc
+  }
   case class TypeclassPlace(tyc: TypeclassWrapper, constraint: Option[TypeExpression])
-      extends TypeclassPlaceExpression(constraint)
+      extends TypeclassPlaceExpression(tyc, constraint)
   case class TypeclassPlaceWithParams(
     tyc: TypeclassWrapper,
     constraint: Option[TypeExpression],
     tpp: TypeParameterPack
-  ) extends TypeclassPlaceExpression(constraint)
+  ) extends TypeclassPlaceExpression(tyc, constraint)
 
   sealed abstract class BasicValueExpression extends ValueExpression
-  case class Variable(id: IdentifierWrapper) extends BasicValueExpression
+  case class Variable(varWrapper: VarWrapper) extends BasicValueExpression
 
   sealed abstract class Literal extends BasicValueExpression
   case class NumericLiteral(numberValue: Int) extends Literal
@@ -88,7 +99,7 @@ class FunnelPEG extends Parser {
 
   sealed abstract class TypeclassDefn extends LeftDoubleArrow
   case class TypeclassDefnFields(fields: Map[VarPlace, MethodTypeAnnotation])
-  case class TypeclassDefinition(tyn: TypeclassWrapper, fields: TypeclassDefnFields)
+  case class TypeclassDefinition(tyn: TypeclassPlaceExpression, fields: TypeclassDefnFields)
       extends TypeclassDefn
 
   sealed abstract class TypeclassImpl extends LeftDoubleArrow
@@ -122,40 +133,42 @@ class FunnelPEG extends Parser {
       extends BasicTypeExpression
 
   // Define the parsing rules.
-  def Funnel = rule { WhiteSpace ~ ReplOrFile ~ EOI }
+  def Funnel: Rule1[Seq[Statement]] = rule { WhiteSpace ~ ReplOrFile ~ EOI }
 
-  def TopLevel: Rule1[AstNode] = rule {
+  def TopLevel: Rule1[Statement] = rule {
 
-    VariableAssignment | TypeAssignment | ParseTypeclassCreation | TypeclassImplementation
+    VariableAssignment | TypeAssignment | ParseTypeclassDefinition | TypeclassImplementation
   }
 
-  def ReplOrFile = rule { zeroOrMore(TopLevel) }
-
-  def ParseIdentifier = rule {
-    oneOrMore("a" - "z" | "A" - "Z" | "0" - "9" | "-" | "_") ~> IdentifierWrapper
+  def ReplOrFile: Rule1[Seq[Statement]] = rule {
+    zeroOrMore(TopLevel) ~> ((s: Seq[Statement]) => s)
   }
 
-  def ParseTypeName = rule {
-    ":" ~ ParseIdentifier ~~> TypeName
+  def ParseIdentifier: Rule1[IdentifierWrapper] = rule {
+    capture(oneOrMore(CharPredicate.AlphaNum | anyOf("-_"))) ~ WhiteSpace ~> ((s: String) => IdentifierWrapper(s))
   }
 
-  def ParseVariablePlaceName = rule {
-    "$" ~ ParseIdentifier ~~> VarPlace
+  def ParseTypeName: Rule1[TypeName] = rule {
+    ":" ~ ParseIdentifier ~> (TypeName(_))
   }
 
-  def ParseVariableRefName = rule {
-    "$" ~ ParseIdentifier ~~> Variable
+  def ParseVariablePlaceName: Rule1[VarPlace] = rule {
+    "$" ~ ParseIdentifier ~> ((id: IdentifierWrapper) => VarPlace(VarWrapper(id)))
   }
 
-  def VariableAssignment = rule {
-    ParseVariablePlaceName ~ "<=" ~ ParseValueExpression ~~> ValueAssignment
+  def ParseVariableRefName: Rule1[Variable] = rule {
+    "$" ~ ParseIdentifier ~> ((id: IdentifierWrapper) => Variable(VarWrapper(id)))
   }
 
+  def VariableAssignment: Rule1[ValueAssignment] = rule {
+    ParseVariablePlaceName ~ "<=" ~ ParseValueExpression ~> (ValueAssignment(_, _))
+  }
 
+  def ParseNumericLiterals: Rule1[NumericLiteral] = rule {
+    capture(oneOrMore(CharPredicate.Digit)) ~> ((s: String) => NumericLiteral(s.toInt))
+  }
 
-  def ParseNumericLiterals: Rule1[NumericLiteral] = rule { oneOrMore("0" - "9") ~> ((s: String) => NumericLiteral(s.toInt))}
-
-  def ParseStringLiterals: Rule1[StringLiteral] = rule { "\"" ~ oneOrMore(!anyOf("\"\\")) ~> ((s) => StringLiteral(s)) ~ "\"" }
+  def ParseStringLiterals: Rule1[StringLiteral] = rule { "\"" ~ capture(oneOrMore(!anyOf("\"\\"))) ~> (StringLiteral(_)) ~ "\"" }
 
   def ParseLiterals: Rule1[Literal] = rule { ParseNumericLiterals | ParseStringLiterals }
 
@@ -163,34 +176,34 @@ class FunnelPEG extends Parser {
     ParseVariableRefName | ParseLiterals
   }
 
-  def ParseTypeNameCreation = rule {
-    ":" ~ ParseIdentifier ~~> TypeWrapper ~~> (wrapper => TypePlace(wrapper, constraint = None))
+  def ParseTypeNameCreation: Rule1[TypePlace] = rule {
+    ":" ~ ParseIdentifier ~> ((id: IdentifierWrapper) => TypePlace(TypeWrapper(id), constraint = None))
   }
 
-  def TypeAssignment = rule {
+  def TypeAssignment: Rule1[TypeDefinition] = rule {
     StructAssignment | EnumAssignment
   }
 
-  def StructAssignment = rule {
-    ParseTypeNameCreation ~ "<=" ~ ParseStructBody ~~> StructDefinition
+  def StructAssignment: Rule1[StructDefinition] = rule {
+    ParseTypeNameCreation ~ "<=" ~ ParseStructBody ~> (StructDefinition(_, _))
   }
 
-  def EnumAssignment = rule {
-    ParseTypeNameCreation ~ "<=" ~ ParseEnumBody ~~> EnumDefinition
+  def EnumAssignment: Rule1[EnumDefinition] = rule {
+    ParseTypeNameCreation ~ "<=" ~ ParseEnumBody ~> (EnumDefinition(_, _))
   }
 
-  def ParseTypeAssertion = rule {
-    ParseVariablePlaceName ~ "<-" ~ ParseTypeExpression ~~> ((varPlace, typeExpr) =>
+  def ParseTypeAssertion: Rule1[VariableTypeAssertion] = rule {
+    ParseVariablePlaceName ~ "<-" ~ ParseTypeExpression ~> ((varPlace, typeExpr) =>
     VariableTypeAssertion(typeExpr, varPlace))
   }
 
   def ParseTypeParameterEvaluation: Rule1[SingleTypeParameterEvaluation] = rule {
-    "<-" ~ "(" ~ ParseTypeNameCreation ~ "<-" ~ ParseTypeExpression ~ ")" ~~> (
+    "<-" ~ "(" ~ ParseTypeNameCreation ~ "<-" ~ ParseTypeExpression ~ ")" ~> (
       (typePlace, typeExpr) => SingleTypeParameterEvaluation(typePlace, typeExpr))
   }
 
   def ParseTypeParameterPack: Rule1[TypeParameterPack] = rule {
-    zeroOrMore(ParseTypeParameterEvaluation) ~~> (params => TypeParameterPack(
+    zeroOrMore(ParseTypeParameterEvaluation) ~> ((params: Seq[SingleTypeParameterEvaluation]) => TypeParameterPack(
       mapping = params.map {
         case SingleTypeParameterEvaluation(ty, constraint) => (ty -> constraint)
       }.toMap
@@ -202,108 +215,103 @@ class FunnelPEG extends Parser {
   }
 
   def ParseStructField: Rule1[SingleStructField] = rule {
-    "." ~ ParseIdentifier ~ optional("<-" ~ ParseTypeExpression) ~~> (
+    "." ~ ParseIdentifier ~ ("<-" ~ ParseTypeExpression).? ~> (
       (varName, maybeTypeExpr) => SingleStructField(varName, maybeTypeExpr))
   }
 
   def ParseStructBody: Rule1[StructFields] = rule {
-    "(" ~ zeroOrMore(ParseStructField, separator = ", ")  ~ ")" ~~> (
-      (fields) => StructFields(fields.map {
+    "(" ~ zeroOrMore(ParseStructField).separatedBy(", " ~ WhiteSpace)  ~ ")" ~> (
+      (fields: Seq[SingleStructField]) => StructFields(fields.map {
         case SingleStructField(id, constraint) => (id -> constraint)
       }.toMap))
   }
 
   def ParseEnumCase: Rule1[SingleEnumCase] = rule {
-    "+" ~ ParseIdentifier ~ optional(ParseStructBody) ~~> (
+    "+" ~ ParseIdentifier ~ ParseStructBody.? ~> (
       (caseName, innerFields) => SingleEnumCase(caseName, innerFields)
     )
   }
 
   def ParseEnumBody: Rule1[EnumCases] = rule {
-    "(" ~ oneOrMore(ParseEnumCase, separator = ", ") ~ ")" ~~> (
-      (cases) => EnumCases(cases.map {
+    "(" ~ oneOrMore(ParseEnumCase).separatedBy(", " ~ WhiteSpace) ~ ")" ~> (
+      (cases: Seq[SingleEnumCase]) => EnumCases(cases.map {
         case SingleEnumCase(id, fields) => (id -> fields)
       }.toMap))
   }
 
-  def ParseTypeclass = rule {
-    "&" ~ ParseIdentifier ~~> Typeclass
+  def ParseTypeclass: Rule1[Typeclass] = rule {
+    "&" ~ ParseIdentifier ~> (Typeclass(_))
   }
 
-  def ParseTypeclassCreation = rule {
-    "&" ~ ParseIdentifier ~~> TypeclassWrapper ~~> ((s) => TypeclassPlace(s, None))
+  def ParseTypeclassCreation: Rule1[TypeclassPlaceExpression] = rule {
+    "&" ~ ParseIdentifier ~> ((id: IdentifierWrapper) => TypeclassPlace(TypeclassWrapper(id), None))
   }
 
-  def TypeclassCreation = rule {
-    ParseTypeclassCreation ~ "<=" ~ ParseTypeclassBody
+  def ParseTypeclassDefinition: Rule1[TypeclassDefn] = rule {
+    ParseTypeclassCreation ~ "<=" ~ ParseTypeclassBody ~> (TypeclassDefinition(_, _))
   }
 
   def ParseValueParameterCreation: Rule1[SingleValueParameterEvaluation] = rule {
-    ParseVariablePlaceName ~ optional("<-" ~ ParseTypeExpression) ~~> (
+    ParseVariablePlaceName ~ ("<-" ~ ParseTypeExpression).? ~> (
       (varPlace, maybeTypeExpr) => SingleValueParameterEvaluation(varPlace, maybeTypeExpr)
     )
   }
 
   def ParseMethodTypeAnnotation: Rule1[MethodTypeAnnotation] = rule {
-    zeroOrMore("(" ~ ParseValueParameterCreation ~ ")" ~ "=>") ~ ParseTypeExpression ~~> (
-      (valueParams, returnType) => MethodTypeAnnotation(
+    zeroOrMore("(" ~ ParseValueParameterCreation ~ ")" ~ "=>") ~ ParseTypeExpression ~> (
+      (valueParams: Seq[SingleValueParameterEvaluation], returnType: TypeExpression) => MethodTypeAnnotation(
         params = valueParams.map {
-          case SingleValueParameterEvaluation(varPlace, constraint) => (varPlace.id -> constraint)
+          case SingleValueParameterEvaluation(varPlace, constraint) => (varPlace.varWrapper.id -> constraint)
         }.toMap,
         result = returnType)
     )
   }
 
   def ParseTypeclassMethodDefn: Rule1[MethodSignature] = rule {
-    ParseVariablePlaceName ~ "<=" ~ ParseMethodTypeAnnotation ~~> MethodSignature
+    ParseVariablePlaceName ~ "<=" ~ ParseMethodTypeAnnotation ~> (MethodSignature(_, _))
   }
 
   def ParseTypeclassBody: Rule1[TypeclassDefnFields] = rule {
-    "(" ~ oneOrMore(ParseTypeclassMethodDefn, separator = ";") ~ ")" ~~> (
-      (methods) => TypeclassDefnFields(methods.map {
+    "(" ~ oneOrMore(ParseTypeclassMethodDefn).separatedBy(";") ~ ")" ~> (
+      (methods: Seq[MethodSignature]) => TypeclassDefnFields(methods.map {
         case MethodSignature(place, annot) => (place -> annot)
       }.toMap)
     )
   }
 
   def ParseMethodBody: Rule1[MethodBody] = rule {
-    "(" ~ oneOrMore(VariableAssignment, separator = ";") ~ ")" ~~> ((varAssignments) => MethodBody(varAssignments.toSeq))
+    "(" ~ oneOrMore(VariableAssignment).separatedBy(";") ~ ")" ~> ((varAssignments: Seq[ValueAssignment]) => MethodBody(varAssignments.toSeq))
   }
 
-  // def HandlePrecedingTypeParameterDecl: Rule1[TypeParameterPack] = rule {
-  //   zeroOrMore(HandleTypeParameter) ~~> (places => TypeParameterPack(
+  // def HandlePrecedingTypeParameterDecl = rule {
+  //   zeroOrMore(HandleTypeParameter) ~> (places => TypeParameterPack(
   //     mapping = places.map {
   //       case TypePlace(ty, constraint) => (ty -> constraint)
   //     }.toMap
   //   ))
   // }
 
-  // def ParseTypeclassConstraint: Rule1[TypePlace] = rule {
-  //   (":" ~ ParseIdentifier ~~> TypeWrapper) ~ "<-" ~ ParseTypeclass ~~> (
+  // def ParseTypeclassConstraint = rule {
+  //   (":" ~ ParseIdentifier ~> TypeWrapper) ~ "<-" ~ ParseTypeclass ~> (
   //     (ty, constraint) => TypePlace(ty, Some(constraint)))
   // }
 
-  // def ParseComplexTypePlace: Rule1[TypePlace] = rule {
+  // def ParseComplexTypePlace = rule {
   //   ParseTypeNameCreation | ParseTypeclassConstraint
   // }
 
-  // def HandleTypeParameter: Rule1[TypePlace] = rule {
+  // def HandleTypeParameter = rule {
   //   ParseComplexTypePlace ~ "->"
   // }
 
-  // def HandleTypeclassSpecialization: Rule1[TypeclassPlaceExpression] = rule {
-  //   ParseTypeclassCreation ~ "<-" ~ HandlePrecedingTypeParameterDecl ~~> ((typeclassPlace, _) => typeclassPlace)
-  //   // ~~> ((typeclassPlace, tpp) => TypeParameterNameAssignment(typeclassPlace, tpp))
+  // def HandleTypeclassSpecialization = rule {
+  //   ParseTypeclassCreation ~ "<-" ~ HandlePrecedingTypeParameterDecl ~> ((typeclassPlace, _) => typeclassPlace)
+  //   // ~> ((typeclassPlace, tpp) => TypeParameterNameAssignment(typeclassPlace, tpp))
   // }
 
-  def HandleTypeclassDefinition = rule {
-    ParseTypeclassCreation ~ "<=" ~ ParseTypeclassBody ~~> (
-      (typ, defn) => TypeclassDefinition(typ.tyc, defn))
-  }
-
   def ParseTypeclassMethodDefnAnonymous: Rule1[TypeclassMethodDefnAnonymous] = rule {
-    zeroOrMore("(" ~ ParseValueParameterCreation ~ ")" ~ "=>") ~ ParseValueExpression ~~> (
-      (params, expr) => TypeclassMethodDefnAnonymous(
+    zeroOrMore("(" ~ ParseValueParameterCreation ~ ")" ~ "=>") ~ ParseValueExpression ~> (
+      (params: Seq[SingleValueParameterEvaluation], expr: ValueExpression) => TypeclassMethodDefnAnonymous(
         vpp = ValueParameterPack(
           params.map {
             case SingleValueParameterEvaluation(vp, constraint) => (vp -> constraint)
@@ -314,15 +322,15 @@ class FunnelPEG extends Parser {
   }
 
   def TypeclassMethodImplementation: Rule1[MethodDefinition] = rule {
-    ParseVariablePlaceName ~ "<=" ~ ParseTypeclassMethodDefnAnonymous ~~> (
-      (vp, defn) => MethodDefinition(place = vp, vpp = defn.vpp, expr = defn.expr)
+    ParseVariablePlaceName ~ "<=" ~ ParseTypeclassMethodDefnAnonymous ~> (
+      (vp: VarPlace, defn: TypeclassMethodDefnAnonymous) => MethodDefinition(place = vp, vpp = defn.vpp, expr = defn.expr)
     )
   }
 
   def TypeclassImplementation: Rule1[TypeclassImpl] = rule {
-    ParseTypeclassCreation ~ "<=" ~ "(" ~ oneOrMore(TypeclassMethodImplementation, separator = ";") ~ ")" ~~> (
-      (typ, methodDefns) => TypeclassImplNode(
-        tyn = typ.tyc,
+    ParseTypeclassCreation ~ "<=" ~ "(" ~ oneOrMore(TypeclassMethodImplementation).separatedBy(";") ~ ")" ~> (
+      (typ: TypeclassPlaceExpression, methodDefns: Seq[MethodDefinition]) => TypeclassImplNode(
+        tyn = typ.getTarget,
         tpp = TypeParameterPack.empty(),
         methods = methodDefns.map {
           case MethodDefinition(place, vpp, expr) => (place -> TypeclassMethodDefnAnonymous(vpp, expr))
@@ -332,10 +340,21 @@ class FunnelPEG extends Parser {
   }
 
   def WhiteSpace: Rule0 = rule { zeroOrMore(anyOf(" \n\r\t\f")) }
+  // See https://github.com/cosmicexplorer/parboiled2#handling-whitespace for recommendations on
+  // handling whitespace with PEG parsers (namely, by matching whitespace strictly after every
+  // terminal).
+  implicit def whitespaceLiteralConverter(s: String): Rule0 = rule {
+    str(s) ~ WhiteSpace
+  }
 }
 
 
 
 object Main extends App {
-  println("wow")
+  val input = ":point <= (.x, .y <- :integer)"
+  val parser = new FunnelPEG(input)
+  val result = parser.StructAssignment.run()
+  println(try { result.get } catch {
+    case e: ParseError => e.format(parser)
+  })
 }
