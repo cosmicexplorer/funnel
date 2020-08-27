@@ -9,7 +9,7 @@ import org.scalatest.junit.JUnitRunner
 
 
 @RunWith(classOf[JUnitRunner])
-class ParserSpec extends FlatSpec with Matchers {
+class ParserSpec extends FreeSpec with Matchers {
 
   def parse(input: String): Statement = {
     val parser = new FunnelPEG(input)
@@ -18,56 +18,82 @@ class ParserSpec extends FlatSpec with Matchers {
     }
   }
 
-  "FunnelPEG" should "Correctly parse simple top-level statements" in {
-    parse(":point <= (.x, .y <- :integer)") should be (StructDefinition(
-      TypePlace(TypeWrapper(IdentifierWrapper("point")), None),
-      StructFields(Map(
-        IdentifierWrapper("x") -> None,
-        IdentifierWrapper("y") -> Some(TypeName(IdentifierWrapper("integer")))
-      ))))
-    parse("$x <= 3") should be (ValueAssignment(
-      VarPlace(VarWrapper(IdentifierWrapper("x"))),
-      NumericLiteral(3)))
-    parse(":list <= (+none, +cons(.car <- :element, .cdr <- :Self))") should be (EnumDefinition(
-      TypePlace(TypeWrapper(IdentifierWrapper("list")), None),
-      EnumCases(Map(
-        IdentifierWrapper("none") -> None,
-        IdentifierWrapper("cons") -> Some(StructFields(Map(
-          IdentifierWrapper("car") -> Some(TypeName(IdentifierWrapper("element"))),
-          IdentifierWrapper("cdr") -> Some(TypeName(IdentifierWrapper("Self"))))))))
-    ))
-  }
+  "FunnelPEG" - {
+    "when parsing top-level expressions" - {
+      "should correctly parse variable and type assignments" in {
+        parse(":point <= (.x, .y <- :integer)") should be (StructDefinition(
+          TypePlace(TypeWrapper(IdentifierWrapper("point")), None),
+          StructFields(Map(
+            IdentifierWrapper("x") -> None,
+            IdentifierWrapper("y") -> Some(TypeName(IdentifierWrapper("integer")))
+          ))))
+        parse("$x <= 3") should be (ValueAssignment(
+          VarPlace(VarWrapper(IdentifierWrapper("x"))),
+          NumericLiteral(3)))
+        parse(":list <= (+none, +cons(.car <- :element, .cdr <- :Self))") should be (EnumDefinition(
+          TypePlace(TypeWrapper(IdentifierWrapper("list")), None),
+          EnumCases(Map(
+            IdentifierWrapper("none") -> None,
+            IdentifierWrapper("cons") -> Some(StructFields(Map(
+              IdentifierWrapper("car") -> Some(TypeName(IdentifierWrapper("element"))),
+              IdentifierWrapper("cdr") -> Some(TypeName(IdentifierWrapper("Self"))))))))
+        ))
+      }
 
-  "FunnelPEG" should "Be able to define functions" in {
-    parse("$f <= ($x <- :integer) => $x") should be (ValueAssignment(
-      VarPlace(VarWrapper(IdentifierWrapper("f"))),
-      AnonymousMethodDefinition(ValueParameterPack(Map(
-        VarPlace(VarWrapper(IdentifierWrapper("x"))) -> Some(TypeName(IdentifierWrapper("integer"))))),
-        Variable(VarWrapper(IdentifierWrapper("x"))))
-      ))
-  }
+      "should be able to define functions with a variable assignment" in {
+        parse("$f <= ($x <- :integer) => $x") should be (ValueAssignment(
+          VarPlace(VarWrapper(IdentifierWrapper("f"))),
+          AnonymousMethodDefinition(ValueParameterPack(Map(
+            VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
+              Some(TypeName(IdentifierWrapper("integer"))))),
+            Variable(VarWrapper(IdentifierWrapper("x"))))
+        ))
+      }
 
-  "FunnelPEG" should "respect the associativity of the arrow operators" in {
-    parse("$f <= $x <- :integer => $x") should be (ValueAssignment(
-      VarPlace(VarWrapper(IdentifierWrapper("f"))),
-      AnonymousMethodDefinition(ValueParameterPack(Map(
-        VarPlace(VarWrapper(IdentifierWrapper("x"))) -> Some(TypeName(IdentifierWrapper("integer"))))),
-        Variable(VarWrapper(IdentifierWrapper("x"))))
-    ))
-  }
+      "should respect the associativity of the arrow operators" in {
+        parse("$f <= $x <- :integer => $x") should be (ValueAssignment(
+          VarPlace(VarWrapper(IdentifierWrapper("f"))),
+          AnonymousMethodDefinition(ValueParameterPack(Map(
+            VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
+              Some(TypeName(IdentifierWrapper("integer"))))),
+            Variable(VarWrapper(IdentifierWrapper("x"))))
+        ))
+      }
 
-  "FunnelPEG" should "allow some or no whitespace after all terminals and identifiers" in {
-    parse("$f <= ( $x <- :integer ) => $x") should be (ValueAssignment(
-      VarPlace(VarWrapper(IdentifierWrapper("f"))),
-      AnonymousMethodDefinition(ValueParameterPack(Map(
-        VarPlace(VarWrapper(IdentifierWrapper("x"))) -> Some(TypeName(IdentifierWrapper("integer"))))),
-        Variable(VarWrapper(IdentifierWrapper("x"))))
-    ))
-    parse("$f<=$x<-:integer=>$x") should be (ValueAssignment(
-      VarPlace(VarWrapper(IdentifierWrapper("f"))),
-      AnonymousMethodDefinition(ValueParameterPack(Map(
-        VarPlace(VarWrapper(IdentifierWrapper("x"))) -> Some(TypeName(IdentifierWrapper("integer"))))),
-        Variable(VarWrapper(IdentifierWrapper("x"))))
-    ))
+      "should allow some or no whitespace after all terminals and identifiers" in {
+        parse("$f <= ( $x <- :integer ) => $x") should be (ValueAssignment(
+          VarPlace(VarWrapper(IdentifierWrapper("f"))),
+          AnonymousMethodDefinition(ValueParameterPack(Map(
+            VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
+              Some(TypeName(IdentifierWrapper("integer"))))),
+            Variable(VarWrapper(IdentifierWrapper("x"))))
+        ))
+        parse("$f<=$x<-:integer=>$x") should be (ValueAssignment(
+          VarPlace(VarWrapper(IdentifierWrapper("f"))),
+          AnonymousMethodDefinition(ValueParameterPack(Map(
+            VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
+              Some(TypeName(IdentifierWrapper("integer"))))),
+            Variable(VarWrapper(IdentifierWrapper("x"))))
+        ))
+      }
+
+      "should be able to parse typeclass definitions" in {
+        parse("&typeclass <= ($f <= :integer; $x <= ($y <- :x) => :z)") should be (TypeclassDefinition(
+          TypeclassPlace(
+            TypeclassWrapper(IdentifierWrapper("typeclass")),
+            None,
+          ),
+          TypeclassDefnFields(Map(
+            VarPlace(VarWrapper(IdentifierWrapper("f"))) ->
+              MethodTypeAnnotation(Map.empty, TypeName(IdentifierWrapper("integer"))),
+            VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
+              MethodTypeAnnotation(Map(
+                IdentifierWrapper("y") -> Some(TypeName(IdentifierWrapper("x")))
+              ),
+                TypeName(IdentifierWrapper("z")))
+          ))
+        ))
+      }
+    }
   }
 }
