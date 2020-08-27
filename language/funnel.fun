@@ -515,4 +515,4 @@ $single-occurrences+equals(5) !
 ($schema <= $validated_schema ; $port_num <= $some_port_num) <= $1:file_or_https_scheme
 
 # https://blog.golang.org/a-new-go-api-for-protocol-buffers
-# go uses f().(*X) to "type assert" that function f returns the type X at runtime.
+# go uses f().(*X) to "type assert" that function f returns a pointer of type X at runtime.

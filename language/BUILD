@@ -1,14 +1,14 @@
 scala_library(
   name='parser',
   dependencies=[
-    '3rdparty/jvm/org/parboiled',
+    '3rdparty/jvm:parboiled2',
   ],
 )
 
-jvm_binary(
-  name='bin',
-  main='funnel.language.Main',
+junit_tests(
+  name='test-parser',
   dependencies=[
     ':parser',
+    '3rdparty/jvm:scalatest',
   ],
 )

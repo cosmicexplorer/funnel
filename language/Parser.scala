@@ -2,7 +2,8 @@ package funnel.language
 
 import org.parboiled2._
 
-class FunnelPEG(override val input: ParserInput) extends Parser {
+
+object FunnelPEG {
   // Define AST entities.
   case class IdentifierWrapper(name: String)
   case class VarWrapper(id: IdentifierWrapper)
@@ -131,6 +132,10 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   case class Typeclass(id: IdentifierWrapper) extends BasicTypeExpression
   case class TypeclassWithParams(id: IdentifierWrapper, tpp: TypeParameterPack)
       extends BasicTypeExpression
+}
+
+class FunnelPEG(override val input: ParserInput) extends Parser {
+  import FunnelPEG._
 
   // Define the parsing rules.
   def Funnel: Rule1[Seq[Statement]] = rule { WhiteSpace ~ ReplOrFile ~ EOI }
@@ -346,15 +351,4 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   implicit def whitespaceLiteralConverter(s: String): Rule0 = rule {
     str(s) ~ WhiteSpace
   }
-}
-
-
-
-object Main extends App {
-  val input = ":point <= (.x, .y <- :integer)"
-  val parser = new FunnelPEG(input)
-  val result = parser.StructAssignment.run()
-  println(try { result.get } catch {
-    case e: ParseError => e.format(parser)
-  })
 }
