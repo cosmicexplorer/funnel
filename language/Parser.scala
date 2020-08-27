@@ -95,7 +95,8 @@ object FunnelPEG {
   ) extends TypeExpression
   case class MethodSignature(place: VarPlace, annot: MethodTypeAnnotation)
   case class MethodBody(statements: Seq[Statement]) extends ValueExpression
-  case class TypeclassMethodDefnAnonymous(vpp: ValueParameterPack, expr: ValueExpression) extends ValueExpression
+  case class AnonymousMethodDefinition(vpp: ValueParameterPack, expr: ValueExpression)
+      extends ValueExpression
   case class MethodDefinition(place: VarPlace, vpp: ValueParameterPack, expr: ValueExpression) extends ValueExpression
 
   sealed abstract class TypeclassDefn extends LeftDoubleArrow
@@ -178,7 +179,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def ParseLiterals: Rule1[Literal] = rule { ParseNumericLiterals | ParseStringLiterals }
 
   def ParseValueExpression: Rule1[ValueExpression] = rule {
-    ParseVariableRefName | ParseLiterals
+    ParseAnonymousMethod | ParseVariableRefName | ParseLiterals
   }
 
   def ParseTypeNameCreation: Rule1[TypePlace] = rule {
@@ -225,7 +226,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def ParseStructBody: Rule1[StructFields] = rule {
-    "(" ~ zeroOrMore(ParseStructField).separatedBy(", " ~ WhiteSpace)  ~ ")" ~> (
+    "(" ~ zeroOrMore(ParseStructField).separatedBy("," ~ WhiteSpace)  ~ ")" ~> (
       (fields: Seq[SingleStructField]) => StructFields(fields.map {
         case SingleStructField(id, constraint) => (id -> constraint)
       }.toMap))
@@ -238,7 +239,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def ParseEnumBody: Rule1[EnumCases] = rule {
-    "(" ~ oneOrMore(ParseEnumCase).separatedBy(", " ~ WhiteSpace) ~ ")" ~> (
+    "(" ~ oneOrMore(ParseEnumCase).separatedBy("," ~ WhiteSpace) ~ ")" ~> (
       (cases: Seq[SingleEnumCase]) => EnumCases(cases.map {
         case SingleEnumCase(id, fields) => (id -> fields)
       }.toMap))
@@ -260,6 +261,20 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseVariablePlaceName ~ ("<-" ~ ParseTypeExpression).? ~> (
       (varPlace, maybeTypeExpr) => SingleValueParameterEvaluation(varPlace, maybeTypeExpr)
     )
+  }
+
+  def AssociatedValueParameter: Rule1[SingleValueParameterEvaluation] = rule {
+    (("(" ~ ParseValueParameterCreation ~ ")") ~> ((param: SingleValueParameterEvaluation) => param)
+    | ParseValueParameterCreation ~> ((param: SingleValueParameterEvaluation) => param))
+  }
+
+  def ParseAnonymousMethod: Rule1[AnonymousMethodDefinition] = rule {
+    oneOrMore(AssociatedValueParameter ~ "=>") ~ ParseValueExpression ~> (
+      (params: Seq[SingleValueParameterEvaluation], expr: ValueExpression) => AnonymousMethodDefinition(
+        vpp = ValueParameterPack(mapping = params.map {
+          case SingleValueParameterEvaluation(vp, constraint) => (vp -> constraint)
+        }.toMap),
+        expr = expr))
   }
 
   def ParseMethodTypeAnnotation: Rule1[MethodTypeAnnotation] = rule {
@@ -314,9 +329,9 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   //   // ~> ((typeclassPlace, tpp) => TypeParameterNameAssignment(typeclassPlace, tpp))
   // }
 
-  def ParseTypeclassMethodDefnAnonymous: Rule1[TypeclassMethodDefnAnonymous] = rule {
+  def ParseAnonymousMethodDefinition: Rule1[AnonymousMethodDefinition] = rule {
     zeroOrMore("(" ~ ParseValueParameterCreation ~ ")" ~ "=>") ~ ParseValueExpression ~> (
-      (params: Seq[SingleValueParameterEvaluation], expr: ValueExpression) => TypeclassMethodDefnAnonymous(
+      (params: Seq[SingleValueParameterEvaluation], expr: ValueExpression) => AnonymousMethodDefinition(
         vpp = ValueParameterPack(
           params.map {
             case SingleValueParameterEvaluation(vp, constraint) => (vp -> constraint)
@@ -327,8 +342,8 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def TypeclassMethodImplementation: Rule1[MethodDefinition] = rule {
-    ParseVariablePlaceName ~ "<=" ~ ParseTypeclassMethodDefnAnonymous ~> (
-      (vp: VarPlace, defn: TypeclassMethodDefnAnonymous) => MethodDefinition(place = vp, vpp = defn.vpp, expr = defn.expr)
+    ParseVariablePlaceName ~ "<=" ~ ParseAnonymousMethodDefinition ~> (
+      (vp: VarPlace, defn: AnonymousMethodDefinition) => MethodDefinition(place = vp, vpp = defn.vpp, expr = defn.expr)
     )
   }
 
@@ -338,7 +353,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
         tyn = typ.getTarget,
         tpp = TypeParameterPack.empty(),
         methods = methodDefns.map {
-          case MethodDefinition(place, vpp, expr) => (place -> TypeclassMethodDefnAnonymous(vpp, expr))
+          case MethodDefinition(place, vpp, expr) => (place -> AnonymousMethodDefinition(vpp, expr))
         }.toMap
       )
     )
