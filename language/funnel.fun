@@ -68,7 +68,7 @@ $mean <= ($input <- :integer...) => (
 # How to specify a typeclass (or something???): use &!
 # Specify a type parameter $operand-type satisfying the &countable typeclass. Then specify a method
 # parameter $input, which is a stream of $operand-type.
-$mean <= ($operand-type <- &countable) -> ($input <- $operand-type...) => (
+$mean <= (:operand-type <- &countable) -> ($input <- $operand-type...) => (
   $sum <= ($zero <- $operand-type);
   $num-values:integer <= 0;
   $input...(
@@ -89,17 +89,17 @@ $mean <= ($input <- &countable...) => (
   $_ <= $divide($sum, $num-values)
 )
 
-# Declaring a typeclass &countable, with a type parameter $type, with several operations (note that
-# the <= arrow is used to declare a typeclass -- the -> arrow here declares a type parameter $type).
-&countable <= $type -> (
+# Declaring a typeclass &countable, with a type parameter :type, with several operations (note that
+# the <= arrow is used to declare a typeclass -- the -> arrow here declares a type parameter :type).
+&countable <= :type -> (
   # Note that there is no difference between a value and a zero-argument function (???)???
-  $zero <- $type;
-  $plus <- ($lhs <- $type) -> ($rhs <- $type) -> $type
+  $zero <= :type;
+  $plus <= ($lhs <- :type) => ($rhs <- :type) => :type
 )
 # Could be shortened to:
-&countable <= $type -> (
-  $zero <- $type;
-  $plus <- ($lhs$type, $rhs$type) -> $type
+&countable <= :type -> (
+  $zero <= :type;
+  $plus <= ($lhs:type, $rhs:type) => :type
 )
 
 # Implementing &countable for the type :integer (note that the <= arrow is used to implement a
@@ -135,7 +135,7 @@ $mean <= ($input <- &countable...) => (
 )
 
 # Note that this expression:
-$Args <- :list:element
+$Args <- :list[:element]
 # Is equivalent to (dereferencing the free type variable :element, and then assigning it to the
 # named type variable :element of the :list struct):
 $Args <- (:list <- (:element <- :element))
@@ -146,7 +146,7 @@ $Args <- (:list <- (:element <- :element))
 # macro accepts only positional, and not named arguments.
 # NB: This attempt at a macro is a little underwhelming, as it requires ($Args... / ";") to be
 # implemented as a special form.
-@make-list <= :element -> ($Args <- :list:element) => ($Args... / ";")
+@make-list <= :element -> ($Args <- :list[:element]) => ($Args... / ";")
 
 $integer-values <- :list <- (:element <- :integer)
 # Could be shortened to:

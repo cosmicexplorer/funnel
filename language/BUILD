@@ -7,7 +7,7 @@ scala_library(
 
 jvm_binary(
   name='bin',
-  main='funnel.Main',
+  main='funnel.language.Main',
   dependencies=[
     ':parser',
   ],
