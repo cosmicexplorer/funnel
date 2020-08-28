@@ -6,7 +6,7 @@
 #     parameter.
 # (2) <- and -> have higher precedence than <= and =>. Parentheses are used to make meaning more
 #     obvious.
-# (3) Structs and enums are defined with :type-name <= ($x, $y, ...). See the definitions of :point
+# (3) Structs and enums are defined with $type-name <= ($x, $y, ...). See the definitions of :point
 #     and :list (which has a type parameter) below. Note that structs CANNOT be declared using the
 #     <- arrow at all right now. Enum cases are denoted with +, and struct fields with the dot `.`.
 # (4) Variables (including functions) are declared with $var <= (...). See the definition of $mean
@@ -89,17 +89,253 @@ $mean <= ($input <- &countable...) => (
   $_ <= $divide($sum, $num-values)
 )
 
-# Declaring a typeclass &countable, with a type parameter :type, with several operations (note that
-# the <= arrow is used to declare a typeclass -- the -> arrow here declares a type parameter :type).
-&countable <= :type -> (
-  # Note that there is no difference between a value and a zero-argument function (???)???
-  $zero <= :type;
-  $plus <= ($lhs <- :type) => ($rhs <- :type) => :type
+# One alternative for the "typeclass" idea: instead using struct definitions with function
+# members. This allows specifying "trait" or "typeclass" constraints the same as specifying concrete
+# type constraints (the conversion into the struct however is *explicit* instead of implicit -- this
+# avoids any scoping weirdness plaguing other typeclass systems (by cirtue of the fact of them
+# having multiple type subsystems doing the same thing)).
+
+# NB: I *think* that both inheritance and typeclasses are forms of dependency injection. How?
+# Inheritance: the parent type's methods are the interface. You want to construct your own
+#              implementation of those methods. The up/downcasting rules are the dependency
+#              injection framework that lets you get a parent class from a child class and vice
+#              versa.
+# Typeclasses: the typeclass's methods are similar to the "canonical struct" `:countable` (for what
+#              used to be the &countable typeclass) below. When the typeclass is implemented, that
+#              says it is safe to inject the implementing type as an instance of the typeclass.
+$countable <= \.type -> (
+  .zero <- .type,
+  .plus <- \(.lhs[.type] .rhs[.type]) => .type,
+)
+$count-integers <- [$countable <- $integer] <= (
+  .zero <= 0,
+  .plus <= \(.lhs, .rhs) => ($integer-plus <= (.lhs, .rhs)),
 )
 # Could be shortened to:
-&countable <= :type -> (
-  $zero <= :type;
-  $plus <= ($lhs:type, $rhs:type) => :type
+$count-integers[$countable[$integer]] <= (
+  .zero <= 0,
+  .plus <= \(.lhs, .rhs) => $integer-plus(.lhs, .rhs)
+)
+
+# NB: The struct definition :countable above is just a function with a type parameter. We can remove
+# the ":" prefix here to remove some confusion.
+$countable <= \.type -> (
+  .zero <- .type,
+  .plus <- \(.lhs[.type], .rhs[.type]) => .type,
+)
+
+$countable-instance <= $countable[$integer](
+  .zero <= 0,
+  .plus <= \(.lhs[$integer], .rhs[$integer]) => $plus(.lhs, .rhs),
+)
+# Or:
+$countable-instance[$countable[$integer]] <= (
+  .zero <= 0,
+  .plus <= \(.lhs, .rhs) => $plus(.lhs, .rhs),
+)
+
+$greater-than <= \(.a[$integer], .b[$integer]) => (
+  +($integer-gt(.a, .b)) => $boolean+true,
+  +() => $boolean+false,
+)
+# Or:
+$greater-than <= \(.a, .b) => $boolean -> (
+  # Using named instead of positional arguments this time:
+  +($integer-gt((.a), (.b))) => +true,
+  +() => +false,
+)
+# Or (where `(...) x $ident` applies the type $ident over all elements of (...)!!)!:
+$greater-than <= \(.a, .b) x [$integer] => (
+  +($integer-gt(_, _)) => +true,
+  +() => +false,
+) <- $boolean
+
+# Example of computing a type $type-result by invoking a method $greater-than, which is only defined
+# as a value function!!
+$type-result <- \[.k[$integer]] -> [
+  +[$greater-than(_, 4)] -> $integer,
+  +[] -> $boolean,
+]
+# Both of the following statements will type-check correctly!
+$x[$type-result[5]] <= 3
+$x[$type-result[4]] <= +true
+
+# It's possible to declare a parameter then dereference it in a single expression, since \.k and .k
+# are distinct in the syntax!
+$type-result <- $greater-than[\.k[$integer], 4] -> [
+  +[+true] -> $integer,
+  +[+false] -> $boolean,
+]
+
+$enum-like-type <- [
+  +a,
+  +b[\.c[@hasImplicitConversion[\.S, \.T] -> [
+            +[+some] -> .S,
+            +[] -> .T,
+          ]]],
+]
+# At runtime, there are no fields, so this is the only allowable value assignment for both type
+# variants.
+# Because the type parameters \.S and \.T don't affect the definition of the +a type variant, we are
+# allowed to omit them in the type call below.
+$x[$enum-like-type+a] <= ()
+$x[$enum-like-type[$integer, $boolean]+b[.c[$integer]]]] <= ()
+
+$y <= (+a)
+$z <= (+b(.c <= 3))
+# Or:
+$z <= (+b(.c(3)))
+$x <= ($y, $z) => (
+  +(+a, +b(.c)) => .c,
+)
+
+# Using (+() => ...) as a match statement.
+$result <= $x => (
+  # Like magrittr, this curried comparison $greater-than($b <= 5) is applying a function.
+  # $greater-than(_, 5) would also have worked (a positional curry).
+  +($greater-than($b <= 5)) => ...,
+  # "else", "_", or "default" clause is +().
+  +() => ...,
+)
+
+# Using -> and [+() -> ...] to match at the type level.
+$result <- $x -> [
+  +a,
+  +b[.x <- $y],
+]
+$some-type <- $result -> [
+  +a -> $integer,
+  +b[.x] -> .x,
+]
+
+# Contemplating removing the final remaining $ sigil for types and values:
+some-type <- result -> [
+  +a -> integer,
+  +b[.x] -> .x,
+]
+
+
+# Scala-like dependency-injected "implicit" parameters do not need to be specially declared in the
+# method definition. Rather, the *caller* may designate values (including functions) which may be
+# consumed to satisfy an "explicit implicit" conversion as well as to provide defaults for
+# parameters not given in the call to a specific function.
+# E.g. given $f defined as below:
+$f <= \.x => (\.x <= $x)
+# Note the EXTREME similarity to the below statement to define $f as a struct:
+$f <= (\.x)
+# Equivalent to:
+$f <= \.x => (.x)
+
+# Note that the below is a parse error:
+$f <= \.x
+
+# This statement sets the parameter \.x from the function/struct $f to 3, unless it is explicitly
+# provided (by name or position) when calling $f.
+@addImplicit($f\.x) <= 3
+# This statement deregisters the implicit binding for $f\.x:
+@removeImplicit($f\.x)
+
+# This can be done for all parameters of a given name, but this is obviously much more likely to
+# lead to a compile error.
+@addImplicit(\.x) <= 3
+
+# Whenever any *single* $integer param in a parameter pack is not provided, this sets the value to
+# 3.
+@addImplicit[$integer] <= 3
+# The type and value parameters can be composed for this macro (covering all $integer parameters
+# named \.x:
+@addImplicit[$integer](\.x) <= 3
+
+# This statement will convert any $integer argument for the @convert() macro to $boolean.
+# NB: The @convert() macro will apply subsequent conversions transitively until it reaches the
+# desired result (in this case, $boolean).
+# NB: If setting the parameter $f\.x or the converter [$integer -> $boolean] results in multiple
+# values specified for a parameter, or multiple transitive pathways from some type A to some type B
+# in the universe of implicit conversions, a compile error is raised.
+@addImplicit[$integer -> $boolean] <= (
+  +(0) => +false,
+  +() => +true,
+)
+
+# The below sets the value $ret to the result of @convert(0 <- $integer), and verifies that the
+# result is a $boolean.
+$ret[$boolean] <= @convert(0[$integer])
+
+
+$optional <= (+some(\.inner[\.innerType]), +none)
+# Or:
+$optional <= \.innerType -> \(+some(\.inner[.innerType]), +none)
+# Or:
+$optional <= \[.innerType] -> (
+  +some <= (\.inner <- .innerType),
+  +none <= (),
+)
+# Or:
+$optional <= (
+  +some(\.inner[\.innerType]),
+  +none,
+)
+
+# Use this macro as a type bound for type parameters!
+@hasImplicitConversion <- \[.fromType, .toType] -> $optional[.fromType -> .toType]
+# Could also use an anonymous enum class:
+@hasImplicitConversion <- \[.fromType, .toType] -> [
+  +has-conversion(.converter[.fromType -> .toType]),
+  +no-conversion-available,
+]
+
+$z <- [
+  +A,
+]
+
+$y <= \.x => {
+  +SomeProduction,
+  +OtherProd,
+}
+
+$x <= (\.input[$integer...]) =~> {
+  +{1 ~ 3 ~ $EOI} ! "oops!",
+  +{1 ~ 3} ~> "asdf",
+} ~=> (
+  +("asdf") => -[3],
+) =-> [
+  +[$integer] -> "wow"
+] -=> (
+  +("hey") => =(3)
+)
+
+# Using <= or => on two rvalues checks for equality!!
+"134" => {+{1 ~ 3 ~ 4} ~> "asdf"} => "asdf" !
+
+# \.s[\.S] is equivalent to (\.S -> \.s[.S])
+$some-value <= \.s[\.S] => @hasImplicitConversion[.S, $boolean] => (
+  +some($converter <= .inner) => $converter(.s),
+  # Can also do:
+  +some(.inner => $converter) => $converter(.s),
+  # If no
+  +none => +false,
+) <- $boolean
+
+# $some-value[$integer] is a runtime value, but we can evaluate it at compile time either by writing
+# `$some-value[$integer][$boolean]`, or `$some-value[$integer] <- [$boolean]`, to get the would-be
+# runtime value, but in the type context (allowing us to set it as a type to $x, and to match with:
+# `[+[<runtime value>] -> <some type to return and set $x to>]`
+$x <- $some-value[$integer][$boolean] -> [
+  +[+true] -> $float,
+  +[+false] -> $double,
+]
+
+# Declaring a typeclass &countable, with a type parameter $type, with several operations (note that
+# the <= arrow is used to declare a typeclass -- the -> arrow here declares a type parameter $type).
+&countable <= \.type -> (
+  # Note that there is no difference between a value and a zero-argument function (???)???
+  $zero <- .type;
+  $plus <- \(.lhs <- .type) => \(.rhs <- .type) => .type
+)
+# Could be shortened to:
+&countable <= \.type -> (
+  $zero <- .type;
+  $plus <- \(.lhs[.type], .rhs[.type]) => .type
 )
 
 # Implementing &countable for the type :integer (note that the <= arrow is used to implement a
@@ -120,37 +356,137 @@ $mean <= ($input <- &countable...) => (
 
 # Bikesheddable struct/enum class declaration syntax. All constructor arguments automatically become
 # the named struct fields!
-:point <= (.x:integer, .y:integer)
+$point <= \(.x <- $integer, .y <- $integer)
+# Could be shortened to:
+$point <= \(.x[$integer], .y[$integer])
 
 # NB: :element is a type variable!! Hence being manipulated with ->!
-:list <= :element -> (
-  +none,
+$list <= \.element -> \(
+  +none <= (),
   # NB: :Self is a type variable!! Hence being dereferenced with <-!
-  +cons(.car <- :element, .cdr <- :Self)
+  +cons <= (.car <- $element, .cdr <- $Self)
 )
 # Could be shortened to:
-:list <= :element -> (
+$list <= \.element -> \(
   +none,
-  +cons(.car:element, .cdr:Self)
+  +cons(.car$element, .cdr$Self)
 )
 
 # Note that this expression:
-$Args <- :list[:element]
+$Args <- $list[$element]
 # Is equivalent to (dereferencing the free type variable :element, and then assigning it to the
 # named type variable :element of the :list struct):
-$Args <- (:list <- (:element <- :element))
+$Args <- ($list <- (\.element <- $element))
+# Or, since ($element) gets converted to (\.element <- $element) (for matching names):
+$Args <- ($list <- ($element))
+# Alternatively, with positional args (*no* parens around $element!):
+$Args <- ($list <- $element)
+
+# TODO: require that all types have an initial capital letter!!
+$named-list[\.El-type] <= (
+  +none,
+  +cons(.car[.El-type], .car-name[$Identifier], .cdr[.Self])
+)
+
+$Enum-Type <- [
+  \+a,
+  # Type and value fields can be intermixed in the same struct. Initial capitals always refers to a
+  # type.
+  \+b[\.d, \.D],
+]
+$y <= [$Enum-Type <- +a]
+$y <= $Enum-Type[+a]
+$y <= $Enum-Type+a
+$z <= $Enum-Type+b <- [\.D -> \.d => $Enum-Type]
+
+$Enum-Type[+b] <- [\.d, \.D]
+
+$Enum-Type <- [
+  \+a <- [] <= (),
+  \+b <- \.D <= \.d,
+]
+$Enum-Type <- [
+  \+a,
+  \+b[\.D](\.d),
+]
+$Enum-Type[+b][$Integer](.d <= 3) <= (.d(3)) <- [.d[$Integer]]
+
+$Nested-Enum-Type <- [
+  \+a[
+    \+s(\.x),
+    \+t,
+  ],
+  \+b,
+]
+
+$Nested-Enum-Type[+a] <- [+s(\.x), \+t]
+$Nested-Enum-Type[+a][+s] <= \.x
+$Nested-Enum-Type[+a][+s] <= \.x => .x
+
+$set <= (
+  +(1),
+  +(2),
+) <- [+()]
+
+$map <= (
+  \+(1) => "a",
+  \+(2) => "b",
+) <- [+() => $String]
+
+$typeSet <= [
+  \+[$Integer],
+  \+[$Boolean],
+] <- [+[]]
+# [+[]] is equivalent to [+[] -> $boolean]
+
+$typeMap <= [
+  \+[$Integer] -> "a",
+  \+[$Boolean] -> "b",
+] <- [+[] -> $String]
+
+$typeMap[+[$Integer]] <= "a"
+
+$Enum-Type <- [\+a, \+b[\.D -> \.d]]
+# The following two are equivalent!!
+$Enum-Type[+a] <- ()
+$Enum-Type[+a] <= ()
+# The following three are equivalent!!
+$Enum-Type <- \+b -> \.D -> (\.d) => (.d)
+$Enum-Type <- [\+b -> +b] -> [\.D -> ((\.d) => (.d))]
+$Enum-Type[+b] <= (.d) <= \.d <- \.D
+$Enum-Type[+b] <- \.D <= (.d) <= \.d
+$Enum-Type[+b][.D <- $Integer] <= (.d) <= \.d
+$Enum-Type[+b][.D <- $Integer] <= (\.d)
+
+$Struct-type <= \.d <- \.D
+$Struct-type <- \.D <= \.d
+
+$X <- $Enum-Type+b -> [
+  # NB: note that we do not need to provide a placeholder `_` for the `.d` field.
+  # NB: note that while `.D` can be matched at "typing time" (or "compile time"), binding `.d`
+  # *cannot* be done inside of a `... -> [+...]` block, since
+  (\.D) -> .D
+]
+$Enum-Type+b <- [\.D] -> ((\.d) => ()) !
+
+
+$X <= $Enum-Type+b => (
+  +a
+)
 
 # @make-list is an attempt to define a macro syntax????
-# ($Args... / ";") expands (at macro time) a parameter pack to match a sequence of inputs separated
-# according to the arguments (in this case, by a semicolon). If $Args is a :list$? like here, the
+# (.args / ";") expands (at macro time) a parameter pack to match a sequence of inputs separated
+# according to the arguments (in this case, by a semicolon). If $args is a $list[_] like here, the
 # macro accepts only positional, and not named arguments.
-# NB: This attempt at a macro is a little underwhelming, as it requires ($Args... / ";") to be
-# implemented as a special form.
-@make-list <= :element -> ($Args <- :list[:element]) => ($Args... / ";")
+# NB: `=[_]` takes the value expression at `_` and inserts it as a literal into a value context (due
+# to the use of `<=`), replacing the @make-list() macro call in the generated code.
+# replacing where
+@make-list <= \.args$list[\.element] ~> {+{.args / ";"} ~> =[.args]}
+@make-list(1 ; 3) ! $list[$integer]+cons(.car(1), .cdr(+cons(.car(3), .cdr(+none))))
 
-$integer-values <- :list <- (:element <- :integer)
+$integer-values <- $list <- [.element <- $integer]
 # Could be shortened to:
-$integer-values <- :list(:integer)
+$integer-values <- $list[$integer]
 # Invoke the macro @make-list<&element, &Args...<- &element>, inferring parameter pack matching.
 $integer-values <= @make-list(1 ; 3 ; 5 ; 2 ; 1)
 
@@ -464,7 +800,7 @@ $occurrences <= \:count-occurrences(1 ; 2 ; 4 ; 5 ; 1 ; 4; 2 ; 1)
 # works above on the type level with '$keys <- +(:k...)'!
 :map <= ($f <= (:k => :v) ; $keys <= +(:k...))
 :map <= (
-  +($k <= $v)... <= $keys => ($k <= :k ; $v <= \$f($k))...
+  +($k <= $v)... <= $keys => ($k <= :k ; $v <= \.f($k))...
 )
 
 :map => (
@@ -481,7 +817,7 @@ $occurrences <= \:count-occurrences(1 ; 2 ; 4 ; 5 ; 1 ; 4; 2 ; 1)
   # ^!!!!!!!!! REALLY GOOD IDEA!!!!
   # '$keys' and '$f' were brought into scope by virtue of being declared in the above definition of
   # +(:integer -> :integer).
-  +($k <= $v)... <= $keys => ($k <= :k ; $v <= \$f($k))...
+  +($k <= $v)... <= $keys => ($k <= :k ; $v <= \.f($k))...
 )
 
 # This declares a method only on the specialization of :map for the type parameter
@@ -516,3 +852,49 @@ $single-occurrences+equals(5) !
 
 # https://blog.golang.org/a-new-go-api-for-protocol-buffers
 # go uses f().(*X) to "type assert" that function f returns a pointer of type X at runtime.
+
+$runtimeType <= \.T -> (
+  # The below two declarations are the same:
+  .T -> \.T,
+  [.T]\.T,
+  # This one does not require \.T to be declared as a type parameter in the preceding expression.
+  [\.T],
+  \.x <- [...],
+  \.y <- [...],
+  \.z <- [...],
+  ...
+)
+# Such that the below two are equivalent:
+$x <- $type
+$x <- $runtimeType[$type].T
+
+$regex <= (.pattern$string) => (...)
+$matchRegex <= (.regex$regex) => {.input$string} ~> {
+  +{"A" ~ "B" ~ "C"} ~> (.a <= "wow"),
+  +{"A" ~> \.a$string} ~> (.a),
+}
+# This doesn't seem to make any sense backwards.
+# {
+#   +(.a("wow")){"A" ~ "B" ~ "C"},
+#   +(.a) <~ {"A" ~> \.a$string},
+# }
+
+$paramName <= {.id$string} ~> {
+  +{"A" | "B"} ~> $boolean+true,
+}
+
+$varPlace <= ???
+
+$implicitConversion <= \[.S, .T] -> (
+  \.type <- $optional[$runtimeType[.T]],
+  \.method <- $optional[.S -> .T],
+  \.paramName <- $optional[$paramName],
+  \.containingMethod <- $optional[$varPlace],
+)
+
+$implicitConversionsTable <= $map[$implicitConversion, \.V]()
+
+
+$hasImplicitConversion <= \[.S, .T] -> $optional[.S, .T] => (
+
+)
