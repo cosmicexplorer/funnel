@@ -107,67 +107,85 @@ $countable <= \.type -> (
   .zero <- .type,
   .plus <- \(.lhs[.type] .rhs[.type]) => .type,
 )
-$count-integers <- [$countable <- $integer] <= (
+$count-integers <- [$countable <- $Integer] <= (
   .zero <= 0,
-  .plus <= \(.lhs, .rhs) => ($integer-plus <= (.lhs, .rhs)),
+  .plus <= \(.lhs, .rhs) => ($Integer-plus <= (.lhs, .rhs)),
 )
 # Could be shortened to:
-$count-integers[$countable[$integer]] <= (
+$count-integers[$countable[$Integer]] <= (
   .zero <= 0,
-  .plus <= \(.lhs, .rhs) => $integer-plus(.lhs, .rhs)
+  .plus <= \(.lhs, .rhs) => $Integer-plus(.lhs, .rhs)
 )
 
 # NB: The struct definition :countable above is just a function with a type parameter. We can remove
 # the ":" prefix here to remove some confusion.
-$countable <= \.type -> (
-  .zero <- .type,
-  .plus <- \(.lhs[.type], .rhs[.type]) => .type,
+$countable <= \.Type -> (
+  .zero[.Type],
+  .plus[(\.lhs[.Type], \.rhs[.Type]) => .Type],
 )
 
-$countable-instance <= $countable[$integer](
-  .zero <= 0,
-  .plus <= \(.lhs[$integer], .rhs[$integer]) => $plus(.lhs, .rhs),
+$countable-instance <= $countable[$Integer](
+  .zero(0),
+  .plus((\.lhs, \.rhs) => $integer-plus(.lhs, .rhs)),
 )
+
+$add <= [\.T] -> (\.instance <~ $countable[.T]) => (\.x, \.y) => .instance.plus(.x, .y)
 # Or:
-$countable-instance[$countable[$integer]] <= (
+$add <= (\.instance{$countable[\.T]}) => .instance.plus(.lhs(\.x), .rhs(\.y))
+# Where (explicitly providing the implicit argument):
+$add(.instance($countable-instance), .x(3), .y(4)) <= 7
+# Or, implicitly:
+# (1) Defining $countable-instance as an implicit provider for a $countable[$Integer].
+$countable-instance <~ $countable[$Integer](
+  .zero(0),
+  .plus((\.lhs, \.rhs) => $integer-plus(.lhs, .rhs)),
+)
+# (2) After the above statement, (\.instance <~ $countable[$Integer]) is now satisfied implicitly:
+$add(3, 4) <= 7
+$add(.x(3), .y(4)) <= 7
+
+
+
+# Or:
+$countable-instance[$countable[$Integer]] <= (
   .zero <= 0,
   .plus <= \(.lhs, .rhs) => $plus(.lhs, .rhs),
 )
 
-$greater-than <= \(.a[$integer], .b[$integer]) => (
-  +($integer-gt(.a, .b)) => $boolean+true,
-  +() => $boolean+false,
+$greater-than <= \(.a[$Integer], .b[$Integer]) => (
+  +($Integer-gt(.a, .b)) => $Boolean+true,
+  +() => $Boolean+false,
 )
 # Or:
-$greater-than <= \(.a, .b) => $boolean -> (
+$greater-than <= \(.a, .b) => $Boolean -> (
   # Using named instead of positional arguments this time:
-  +($integer-gt((.a), (.b))) => +true,
+  +($Integer-gt((.a), (.b))) => +true,
   +() => +false,
 )
 # Or (where `(...) x $ident` applies the type $ident over all elements of (...)!!)!:
-$greater-than <= \(.a, .b) x [$integer] => (
-  +($integer-gt(_, _)) => +true,
+$greater-than <= \(.a, .b) x [$Integer] => (
+  +($Integer-gt(_, _)) => +true,
   +() => +false,
-) <- $boolean
+) <- $Boolean
 
-# Example of computing a type $type-result by invoking a method $greater-than, which is only defined
+# Example of computing a type $Type-Result by invoking a method $greater-than, which is only defined
 # as a value function!!
-$type-result <- \[.k[$integer]] -> [
-  +[$greater-than(_, 4)] -> $integer,
-  +[] -> $boolean,
+$Type-Result <- \[.k[$Integer]] -> [
+  +[$greater-than(_, 4)] -> $Integer,
+  +[] -> $Boolean,
 ]
 # Both of the following statements will type-check correctly!
-$x[$type-result[5]] <= 3
-$x[$type-result[4]] <= +true
+$x[$Type-Result[5]] <= 3
+$x[$Type-Result[4]] <= +true
 
 # It's possible to declare a parameter then dereference it in a single expression, since \.k and .k
 # are distinct in the syntax!
-$type-result <- $greater-than[\.k[$integer], 4] -> [
-  +[+true] -> $integer,
-  +[+false] -> $boolean,
+$Type-Result <- $greater-than[\.k[$Integer], 4] -> [
+  +[+true] -> $Integer,
+  +[+false] -> $Boolean,
 ]
 
-$enum-like-type <- [
+$Enum-Like-Type <- [
   +a,
   +b[\.c[@hasImplicitConversion[\.S, \.T] -> [
             +[+some] -> .S,
@@ -178,8 +196,8 @@ $enum-like-type <- [
 # variants.
 # Because the type parameters \.S and \.T don't affect the definition of the +a type variant, we are
 # allowed to omit them in the type call below.
-$x[$enum-like-type+a] <= ()
-$x[$enum-like-type[$integer, $boolean]+b[.c[$integer]]]] <= ()
+$x[$Enum-Like-Type+a] <= ()
+$x[$Enum-Like-Type[$Integer, $Boolean]+b[.c[$Integer]]]] <= ()
 
 $y <= (+a)
 $z <= (+b(.c <= 3))
@@ -204,7 +222,7 @@ $result <- $x -> [
   +b[.x <- $y],
 ]
 $some-type <- $result -> [
-  +a -> $integer,
+  +a -> $Integer,
   +b[.x] -> .x,
 ]
 
@@ -239,27 +257,27 @@ $f <= \.x
 # lead to a compile error.
 @addImplicit(\.x) <= 3
 
-# Whenever any *single* $integer param in a parameter pack is not provided, this sets the value to
+# Whenever any *single* $Integer param in a parameter pack is not provided, this sets the value to
 # 3.
-@addImplicit[$integer] <= 3
-# The type and value parameters can be composed for this macro (covering all $integer parameters
+@addImplicit[$Integer] <= 3
+# The type and value parameters can be composed for this macro (covering all $Integer parameters
 # named \.x:
-@addImplicit[$integer](\.x) <= 3
+@addImplicit[$Integer](\.x) <= 3
 
-# This statement will convert any $integer argument for the @convert() macro to $boolean.
+# This statement will convert any $Integer argument for the @convert() macro to $Boolean.
 # NB: The @convert() macro will apply subsequent conversions transitively until it reaches the
-# desired result (in this case, $boolean).
-# NB: If setting the parameter $f\.x or the converter [$integer -> $boolean] results in multiple
+# desired result (in this case, $Boolean).
+# NB: If setting the parameter $f\.x or the converter [$Integer -> $Boolean] results in multiple
 # values specified for a parameter, or multiple transitive pathways from some type A to some type B
 # in the universe of implicit conversions, a compile error is raised.
-@addImplicit[$integer -> $boolean] <= (
+@addImplicit[$Integer -> $Boolean] <= (
   +(0) => +false,
   +() => +true,
 )
 
-# The below sets the value $ret to the result of @convert(0 <- $integer), and verifies that the
-# result is a $boolean.
-$ret[$boolean] <= @convert(0[$integer])
+# The below sets the value $ret to the result of @convert(0 <- $Integer), and verifies that the
+# result is a $Boolean.
+$ret[$Boolean] <= @convert(0[$Integer])
 
 
 $optional <= (+some(\.inner[\.innerType]), +none)
@@ -293,13 +311,13 @@ $y <= \.x => {
   +OtherProd,
 }
 
-$x <= (\.input[$integer...]) =~> {
+$x <= (\.input[$Integer...]) =~> {
   +{1 ~ 3 ~ $EOI} ! "oops!",
   +{1 ~ 3} ~> "asdf",
 } ~=> (
   +("asdf") => -[3],
 ) =-> [
-  +[$integer] -> "wow"
+  +[$Integer] -> "wow"
 ] -=> (
   +("hey") => =(3)
 )
@@ -308,19 +326,19 @@ $x <= (\.input[$integer...]) =~> {
 "134" => {+{1 ~ 3 ~ 4} ~> "asdf"} => "asdf" !
 
 # \.s[\.S] is equivalent to (\.S -> \.s[.S])
-$some-value <= \.s[\.S] => @hasImplicitConversion[.S, $boolean] => (
+$some-value <= \.s[\.S] => @hasImplicitConversion[.S, $Boolean] => (
   +some($converter <= .inner) => $converter(.s),
   # Can also do:
   +some(.inner => $converter) => $converter(.s),
   # If no
   +none => +false,
-) <- $boolean
+) <- $Boolean
 
-# $some-value[$integer] is a runtime value, but we can evaluate it at compile time either by writing
-# `$some-value[$integer][$boolean]`, or `$some-value[$integer] <- [$boolean]`, to get the would-be
+# $some-value[$Integer] is a runtime value, but we can evaluate it at compile time either by writing
+# `$some-value[$Integer][$Boolean]`, or `$some-value[$Integer] <- [$Boolean]`, to get the would-be
 # runtime value, but in the type context (allowing us to set it as a type to $x, and to match with:
 # `[+[<runtime value>] -> <some type to return and set $x to>]`
-$x <- $some-value[$integer][$boolean] -> [
+$x <- $some-value[$Integer][$Boolean] -> [
   +[+true] -> $float,
   +[+false] -> $double,
 ]
@@ -344,43 +362,47 @@ $x <- $some-value[$integer][$boolean] -> [
 # needed.
 &countable <- :integer <= (
   $zero <= 0L;
-  # NB: Assumed that $integer-add is somehow provided by the prelude.
-  $plus <= ($lhs:integer, $rhs:integer) => $integer-add($lhs, $rhs)
+  # NB: Assumed that $Integer-add is somehow provided by the prelude.
+  $plus <= ($lhs:integer, $rhs:integer) => $Integer-add($lhs, $rhs)
 )
 # Could be shortened to:
 &countable:integer <= (
   $zero <= 0L;
   # (due to type inference)
-  $plus <= ($lhs, $rhs) => $integer-add($lhs, $rhs)
+  $plus <= ($lhs, $rhs) => $Integer-add($lhs, $rhs)
 )
 
 # Bikesheddable struct/enum class declaration syntax. All constructor arguments automatically become
 # the named struct fields!
-$point <= \(.x <- $integer, .y <- $integer)
+$point <= \(.x <- $Integer, .y <- $Integer)
 # Could be shortened to:
-$point <= \(.x[$integer], .y[$integer])
+$point <= \(.x[$Integer], .y[$Integer])
 
 # NB: :element is a type variable!! Hence being manipulated with ->!
-$list <= \.element -> \(
+$list <= \.Element -> \(
   +none <= (),
   # NB: :Self is a type variable!! Hence being dereferenced with <-!
   +cons <= (.car <- $element, .cdr <- $Self)
 )
 # Could be shortened to:
-$list <= \.element -> \(
-  +none,
-  +cons(.car$element, .cdr$Self)
+$list <= \.Element -> (
+  \+none,
+  \+cons(\.car[.Element], \.cdr[.Self]),
 )
+# Or:
+$list <= [\.Element](...)
+# Or:
+$list[\.Element] <= (...)
 
+# Note that this infers .Element <- $Integer
+$args <= $list+cons(.car(3), .cdr(+none))
 # Note that this expression:
-$Args <- $list[$element]
-# Is equivalent to (dereferencing the free type variable :element, and then assigning it to the
-# named type variable :element of the :list struct):
-$Args <- ($list <- (\.element <- $element))
-# Or, since ($element) gets converted to (\.element <- $element) (for matching names):
-$Args <- ($list <- ($element))
-# Alternatively, with positional args (*no* parens around $element!):
-$Args <- ($list <- $element)
+-[$args] <- $list[$Integer]
+# Is equivalent to (dereferencing the free type variable $Integer and then assigning it to the
+# scoped type variable .Element of the $list struct):
+-[$args] <- [$list <- $Integer]
+# Or, with named arguments:
+-[$args] <- $list[.Element[$Integer]]
 
 # TODO: require that all types have an initial capital letter!!
 $named-list[\.El-type] <= (
@@ -424,8 +446,8 @@ $Nested-Enum-Type[+a][+s] <= \.x
 $Nested-Enum-Type[+a][+s] <= \.x => .x
 
 $set <= (
-  +(1),
-  +(2),
+  \+(1),
+  \+(2),
 ) <- [+()]
 
 $map <= (
@@ -437,7 +459,7 @@ $typeSet <= [
   \+[$Integer],
   \+[$Boolean],
 ] <- [+[]]
-# [+[]] is equivalent to [+[] -> $boolean]
+# [+[]] is equivalent to [+[] -> $Boolean]
 
 $typeMap <= [
   \+[$Integer] -> "a",
@@ -481,14 +503,14 @@ $X <= $Enum-Type+b => (
 # NB: `=[_]` takes the value expression at `_` and inserts it as a literal into a value context (due
 # to the use of `<=`), replacing the @make-list() macro call in the generated code.
 # replacing where
-@make-list <= \.args$list[\.element] ~> {+{.args / ";"} ~> =[.args]}
-@make-list(1 ; 3) ! $list[$integer]+cons(.car(1), .cdr(+cons(.car(3), .cdr(+none))))
+@make-list <= \.args$list[\.Element] ~> {+{.args / ";"} ~> =[.args]}
+@make-list(1 ; 3) ! $list[$Integer]+cons(.car(1), .cdr(+cons(.car(3), .cdr(+none))))
 
-$integer-values <- $list <- [.element <- $integer]
+$Integer-values <- $list <- [.Element <- $Integer]
 # Could be shortened to:
-$integer-values <- $list[$integer]
+$Integer-values <- $list[$Integer]
 # Invoke the macro @make-list<&element, &Args...<- &element>, inferring parameter pack matching.
-$integer-values <= @make-list(1 ; 3 ; 5 ; 2 ; 1)
+$Integer-values <= @make-list(1 ; 3 ; 5 ; 2 ; 1)
 
 # Attempted infix @<+= operator:
 @`<+=` <~ ((:operand-type <- &countable) -> ($lhs:operand-type, $rhs:operand-type)
@@ -511,7 +533,7 @@ $x <= ($f <- :integer) <= (1, 2)  # => x is now 3
 
 
 @a-macro <~ (
-  ($x:integer => $y:integer) @=> $integer-plus($x, $y);
+  ($x:integer => $y:integer) @=> $Integer-plus($x, $y);
   $z:string @=> $concat($z, $z);
   dynamic => $parse
 )
@@ -529,7 +551,7 @@ $x <= ($f <- :integer) <= (1, 2)  # => x is now 3
 
 &hashable:integer <= (
   $hash <= $_:integer => $_;
-  $equals <= ($lhs:integer, $rhs:integer) => $integer-equals($lhs, $rhs)
+  $equals <= ($lhs:integer, $rhs:integer) => $Integer-equals($lhs, $rhs)
 )
 
 # This *could* work as a map, but doesn't have any working methods yet.
@@ -546,16 +568,16 @@ $get <= [:k&hashable, :v] -> $map:map[:k, :v] => $key:k => (
 $value <= $get($the-map, 2L)  # => 4L
 
 # Example of destructuring to bind the result of a method which has exported non-'$_' variables!
-($integer-sum <= $sum, $num-elements <= $num-values, $mean <= $_) <= $integer-values+mean
+($Integer-sum <= $sum, $num-elements <= $num-values, $mean <= $_) <= $Integer-values+mean
 # '!' is still-experimental syntax to force an "assertion" for '?'-typed output (is '?' a type????)!
-$integer-sum+equals(12) !
+$Integer-sum+equals(12) !
 $num-elements+equals(5) !
 # This is integer division!
 $mean+equals(2) !
 
 # If not destructured by opening a scope (using parentheses, as above), the value of '$_' is assumed
 # to be used!
-$integer-values+mean+equals(2) !
+$Integer-values+mean+equals(2) !
 
 
 # importing symbols!!
@@ -880,7 +902,7 @@ $matchRegex <= (.regex$regex) => {.input$string} ~> {
 # }
 
 $paramName <= {.id$string} ~> {
-  +{"A" | "B"} ~> $boolean+true,
+  +{"A" | "B"} ~> $Boolean+true,
 }
 
 $varPlace <= ???
