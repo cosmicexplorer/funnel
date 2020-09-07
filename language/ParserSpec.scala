@@ -25,14 +25,21 @@ class ParserSpec extends FreeSpec with Matchers {
           GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
           IntegerLiteral(3),
         ))
-        // parse("$x <= (3, \"a\", 0.0)") should be (ValueAssignment(
-        //   GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
-        //   PositionalValueParameterPack(Seq(
-        //     IntegerLiteral(3),
-        //     StringLiteral("a"),
-        //     FloatLiteral(0.0),
-        //   )),
-        // ))
+        parse("$x <= (\\.x, \\.y)") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
+          StructLiteralValue(Map(
+            NamedIdentifier(ValueKind, "x") -> TypePlaceholder,
+            NamedIdentifier(ValueKind, "y") -> TypePlaceholder,
+          ))
+        ))
+        parse("$x <= (3, \"a\", 0.0)") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
+          PositionalValueParameterPack(Seq(
+            IntegerLiteral(3),
+            StringLiteral("a"),
+            FloatLiteral(0.0),
+          )),
+        ))
         parse("$point <= (.x(2)[$Integer], .y <= (3))") should be (ValueAssignment(
           GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "point"))),
           NamedValuePack(Map(
@@ -46,6 +53,26 @@ class ParserSpec extends FreeSpec with Matchers {
           GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "X"))),
           GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Y"))),
         ))
+        parse("$list <= (\\+empty, \\+cons(\\.car <- $Element, \\.cdr <- $Self))") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "list"))),
+          ValueAlternation(Map(
+            AlternationCaseName("empty") -> EmptyStructType,
+            AlternationCaseName("cons") -> StructLiteralType(Map(
+              NamedIdentifier(ValueKind, "car") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Element"))),
+              NamedIdentifier(ValueKind, "cdr") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Self"))),
+            ))
+          ))
+        ))
+        parse("$X <- <(\\.x[$Integer])>") should be (TypeAssignment(
+          GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "X"))),
+          StructLiteralType(Map(
+            NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
+          ))
+        ))
+      }
+
+      "should be able to define functions with a variable assignment" in {
+        parse("$f <= (\\.x <- $Integer) => .x") should be (null)
       }
     }
   }

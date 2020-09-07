@@ -102,14 +102,17 @@ object FunnelPEG {
     }
   }
 
-  trait HasNamedIdentifier extends HasExpressionKind {
-    override def expressionKind: ExpressionKinds = namedIdentifier.expressionKind
+  trait HasNamedIdentifier {
     def namedIdentifier: NamedIdentifier
+  }
+
+  trait HasIdentifierDrivenKind extends HasNamedIdentifier with HasExpressionKind {
+    override def expressionKind = namedIdentifier.expressionKind
   }
 
   // Capitalization is enforced for types and values, so we need to have the
   //  type parameter available even up here.
-  sealed abstract class LocalIdentifierKinds extends HasNamedIdentifier
+  sealed abstract class LocalIdentifierKinds extends HasIdentifierDrivenKind
   case class LocalNamedIdentifier(id: NamedIdentifier)
       extends LocalIdentifierKinds {
     override def namedIdentifier = id
@@ -140,7 +143,7 @@ object FunnelPEG {
   }
   case class AlternationCase(name: AlternationCaseName, tpe: TypePackExpression)
 
-  sealed abstract class VarKinds extends HasNamedIdentifier
+  sealed abstract class VarKinds extends HasIdentifierDrivenKind
   case class GlobalVar(id: NamedIdentifier) extends VarKinds {
     override def namedIdentifier = id
   }
@@ -166,27 +169,29 @@ object FunnelPEG {
   }
   import KindsChecker._
 
-  sealed abstract class ParameterPackKinds(kind: ExpressionKinds)
-      extends HasExpressionKind {
-    override def expressionKind = kind
+  sealed abstract class ParameterPackKinds extends HasExpressionKind {
     def intoLazyPack(): LazyParameterPack
   }
-  case class EmptyParameterPack(kind: ExpressionKinds) extends ParameterPackKinds(kind) {
+  case class EmptyParameterPack(kind: ExpressionKinds) extends ParameterPackKinds {
+    override def expressionKind = kind
     override def intoLazyPack(): LazyParameterPack = LazyParameterPack(Seq())
   }
-  case class StandaloneParameter(expr: Expression) extends ParameterPackKinds(expr.expressionKind) {
+  case class StandaloneParameter(expr: Expression) extends ParameterPackKinds {
+    override def expressionKind = expr.expressionKind
     override def intoLazyPack(): LazyParameterPack = LazyParameterPack(Seq((None -> expr)))
   }
-  case class PositionalParameterPack(exprs: Seq[Expression])
-      extends ParameterPackKinds(ensureNonEmptySameKind("positional parameter pack", exprs.map(_.expressionKind))) {
+  case class PositionalParameterPack(exprs: Seq[Expression]) extends ParameterPackKinds {
+    override def expressionKind = ensureNonEmptySameKind(
+      "positional parameter pack",
+      exprs.map(_.expressionKind))
     override def intoLazyPack(): LazyParameterPack = LazyParameterPack(exprs.map(None -> _))
   }
   case class NamedParameterPack(
     fulfilled: Map[NamedIdentifier, Expression],
-  ) extends ParameterPackKinds(
-      ensureNonEmptySameKind("named parameter pack",
-      fulfilled.flatMap { case (namedIdentifier, expr) => Seq(namedIdentifier.expressionKind, expr.expressionKind) },
-    )) {
+  ) extends ParameterPackKinds {
+    override def expressionKind = ensureNonEmptySameKind(
+      "named parameter pack",
+      fulfilled.map { case (_, expr) => expr.expressionKind })
     override def intoLazyPack(): LazyParameterPack = LazyParameterPack(
       exprs = fulfilled.map {
         case (namedIdentifier, expr) => (Some(namedIdentifier) -> expr)
@@ -205,9 +210,7 @@ object FunnelPEG {
   ) extends HasExpressionKind {
     override def expressionKind = ensureNonEmptySameKind(
       "lazy parameter pack",
-      exprs.flatMap {
-        case (namedIdentifier, expr) => namedIdentifier.map(_.expressionKind).toSeq :+ expr.expressionKind
-      })
+      exprs.map { case (_, expr) => expr.expressionKind })
 
     def merge(
       fromLocation: ParameterPushLocationKinds,
@@ -239,9 +242,7 @@ object FunnelPEG {
   ) extends HasExpressionKind {
     override def expressionKind = ensureNonEmptySameKind(
       "full parameter pack",
-      mapping.flatMap {
-        case (localVar, expr) => Seq(localVar.expressionKind, expr.expressionKind)
-      })
+      mapping.map { case (_, expr) => expr.expressionKind })
 
     def isEmpty: Boolean = mapping.isEmpty
   }
@@ -268,20 +269,23 @@ object FunnelPEG {
     override def expressionKind = kind
   }
 
-  sealed abstract class Expression(kind: ExpressionKinds)
-      extends AstNode with HasExpressionKind {
-    override def expressionKind = kind
+  trait HasParameterPack {
     def parameterPack: ParameterPackKinds
-    def extractType: TypeExpression
     def functionParams: StructLiteralType
     def pendingTypeMatchups: TypeMatchups
-
-    if (expressionKind != parameterPack.expressionKind) {
-      throw ExpressionKindsDidNotMatch(parameterPack, expressionKind)
-    }
   }
 
-  sealed abstract class ValueExpression extends Expression(ValueKind) {
+  trait HasType {
+    def extractType: TypeExpression
+  }
+
+  sealed abstract class Expression extends AstNode
+      with HasParameterPack
+      with HasType
+      with HasExpressionKind
+
+  sealed abstract class ValueExpression extends Expression {
+    override def expressionKind = ValueKind
     override def functionParams: StructLiteralType = extractType.functionParams
     override def pendingTypeMatchups = TypeMatchups.empty()
   }
@@ -292,14 +296,6 @@ object FunnelPEG {
   }
   case class GlobalValueVar(g: GlobalVar) extends ValueTerm
   case class LocalValueVar(l: LocalVar) extends ValueTerm
-
-  sealed abstract class ValueAlternationExpression extends ValueExpression {
-    override def parameterPack = StandaloneParameter(this)
-  }
-  case class ValueAlternation(cases: Map[AlternationCaseName, TypePackExpression])
-      extends ValueAlternationExpression {
-    override def extractType = TypeAlternation(cases)
-  }
 
   sealed abstract class ValuePackExpression(pack: ParameterPackKinds)
       extends ValueExpression {
@@ -366,7 +362,8 @@ object FunnelPEG {
       }
   }
 
-  sealed abstract class TypeExpression extends Expression(TypeKind) {
+  sealed abstract class TypeExpression extends Expression {
+    override def expressionKind = TypeKind
     override def extractType: TypeExpression = this
     override def functionParams: StructLiteralType = StructLiteralType.empty()
     override def pendingTypeMatchups = TypeMatchups.empty()
@@ -397,6 +394,17 @@ object FunnelPEG {
   }
   case class TypeAlternation(cases: Map[AlternationCaseName, TypePackExpression])
       extends TypeAlternationExpression
+
+  sealed abstract class ValueAlternationExpression extends ValueExpression {
+    override def parameterPack = StandaloneParameter(this)
+  }
+  object ValueAlternation {
+    def apply(ta: TypeAlternation): ValueAlternation = ValueAlternation(ta.cases)
+  }
+  case class ValueAlternation(cases: Map[AlternationCaseName, TypePackExpression])
+      extends ValueAlternationExpression {
+    override def extractType = TypeAlternation(cases)
+  }
 
   object StructLiteralType {
     def empty(): StructLiteralType = StructLiteralType(Map.empty[NamedIdentifier, TypeExpression])
@@ -652,25 +660,27 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     capture(oneOrMore(CharPredicate.Digit)) ~> ((s: String) => IntegerLiteral(s.toInt))
   }
   def ParseStringLiteral: Rule1[StringLiteral] = rule {
-    // TODO: this won't allow any string literals with backslashes in them whatsoever!!
-    "\"" ~ (capture(oneOrMore(!anyOf("\"\\"))) ~> ((s: String) => StringLiteral(s))) ~ "\""
+    ("\"" ~ capture(oneOrMore(noneOf("\"\\"))) ~ "\"") ~> ((s: String) => StringLiteral(s))
   }
 
-  // TODO: Do this right!!!
   def ParseFloatLiteral: Rule1[FloatLiteral] = rule {
-    capture("0.0") ~> ((s: String) => FloatLiteral(s.toDouble))
+    ((capture(oneOrMore(CharPredicate.Digit)) ~ str(".") ~ capture(oneOrMore(CharPredicate.Digit))) ~> (
+      (lhs: String, rhs: String) => FloatLiteral(s"$lhs.$rhs".toDouble)
+    )
+      | ((str(".") ~ capture(oneOrMore(CharPredicate.Digit))) ~> (
+        (rhs: String) => FloatLiteral(s"0.$rhs".toDouble)
+      )))
   }
 
   def ParseValueLiteral: Rule1[ValueLiteral] = rule {
-    ParseIntegerLiteral | ParseStringLiteral | ParseFloatLiteral
+    ParseFloatLiteral | ParseIntegerLiteral | ParseStringLiteral
   }
-
 
   def ParseEmptyStruct: Rule1[ValuePackExpression] = rule {
     capture("()") ~> ((_: String) => EmptyStruct)
   }
   def ParsePositionalValueParameterPack: Rule1[PositionalValueParameterPack] = rule {
-    "(" ~ oneOrMore(ParseValueExpression).separatedBy("," ~ WhiteSpace) ~ ")" ~> (
+    "(" ~ oneOrMore(MaybeParseStandaloneValueExpression).separatedBy(",") ~ ")" ~> (
       (values: Seq[ValueExpression]) => PositionalValueParameterPack(values)
     )
   }
@@ -689,7 +699,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       (localVar: LocalValueVar, valueWithType: ValueWithTypeAssertion) => NamedStructField(localVar, valueWithType))
   }
   def ParseNamedValuePack: Rule1[NamedValuePack] = rule {
-    (("(" ~ oneOrMore(_ParseStructField).separatedBy("," ~ WhiteSpace) ~ ")") ~> (
+    (("(" ~ oneOrMore(_ParseStructField).separatedBy(",") ~ ")") ~> (
       (fields: Seq[NamedStructField]) => NamedValuePack(
         LazyParameterPack(fields.flatMap(_.parameterPack.intoLazyPack().exprs)).intoFullPack()))
       | _ParseStructField ~> (
@@ -726,12 +736,21 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
         ChainedValueExpression(start = LocalChainValueStart(lv), chain = chain)))
   }
 
+  def _ParseSimpleValueExpression: Rule1[ValueExpression] = rule {
+    ParseValueLiteral |
+    ParseEmptyStruct
+  }
+
   def _ParseStandaloneValueExpressionHelper: Rule1[StandaloneValueExpression] = rule {
-    _ParseChainedValueExpression ~> ((chainedValue: ChainedValueExpression) => StandaloneValueExpression(chainedValue))
+    ((_ParseChainedValueExpression) ~> (
+      (chainedValue: ChainedValueExpression) => StandaloneValueExpression(chainedValue)))
   }
   def MaybeParseStandaloneValueExpression: Rule1[ValueExpression] = rule {
     (("(" ~ _ParseBaseValueExpression ~ ")") ~> ((value: ValueExpression) => value)
-    | _ParseStandaloneValueExpressionHelper ~> ((value: StandaloneValueExpression) => value))
+      // | _ParseStandaloneValueExpressionHelper ~> ((value: StandaloneValueExpression) => value)
+      | (_ParseSimpleValueExpression) ~> (
+        (simpleValue: ValueExpression) => simpleValue)
+    )
   }
 
   def ParseFunctionCall: Rule1[FunctionCall] = rule {
@@ -742,10 +761,9 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def _ParseBaseValueExpression: Rule1[ValueExpression] = rule {
     ParseGlobalValueVar |
     ParseNamedLocalValueVar |
-    ParseIntegerLiteral |
-    ParseFloatLiteral |
-    ParseStringLiteral |
+    ParseValueLiteral |
     ParseStructDeclValue |
+    ParseEnumDeclValue |
     ParseEmptyStruct |
     ParsePositionalValueParameterPack |
     ParseNamedValuePack |
@@ -799,11 +817,15 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseNamedLocalTypeVar
   }
 
+  def _ParseAtomicTypeExpressions: Rule1[TypeExpression] = rule {
+    "<" ~ (ParseStructDecl | ParseEnumDecl) ~ ">" ~> (
+      (te: TypeExpression) => te
+    )
+  }
+
   def ParseTypeExpression: Rule1[TypeExpression] = rule {
     ParseTypeTerm |
-    ParseEnumDecl |
-    ParseStructDecl |
-    ParseEnumDecl
+    _ParseAtomicTypeExpressions
   }
 
   // def ParseStructField: Rule1[SingleStructField] = rule {
@@ -812,7 +834,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   // }
 
   // def ParseStructBody: Rule1[StructFields] = rule {
-  //   "(" ~ zeroOrMore(ParseStructField).separatedBy("," ~ WhiteSpace)  ~ ")" ~> (
+  //   "(" ~ zeroOrMore(ParseStructField).separatedBy(",")  ~ ")" ~> (
   //     (fields: Seq[SingleStructField]) => StructFields(fields.map {
   //       case SingleStructField(id, constraint) => (id -> constraint)
   //     }.toMap))
@@ -828,22 +850,26 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     capture("()".?) ~> ((_: String) => EmptyStructType)
   }
   def ParsePositionalStructDecl: Rule1[PositionalTypePack] = rule {
-    "(" ~ oneOrMore(ParseTypeExpression).separatedBy("," ~ WhiteSpace) ~ ")" ~> (
+    "(" ~ oneOrMore(ParseTypeExpression).separatedBy(",") ~ ")" ~> (
       (types: Seq[TypeExpression]) => PositionalTypePack(types)
     )
   }
   def _ParseFieldWithTypeAssertion: Rule1[TypeExpression] = rule {
-    optional("<-") ~ "[" ~ ParseTypeExpression ~ "]" ~> (
+    (optional("<-") ~ "[" ~ ParseTypeExpression ~ "]" ~> (
       (te: TypeExpression) => te
     )
+      | "<-" ~ ParseTypeExpression ~> (
+        (te: TypeExpression) => te
+    ))
   }
   def _ParseStructFieldDecl: Rule1[NamedStructFieldDecl] = rule {
-    "\\" ~ ParseNamedLocalValueVar ~ _ParseFieldWithTypeAssertion ~> (
-      (localVar: LocalValueVar, te: TypeExpression) => NamedStructFieldDecl(localVar, te)
+    "\\" ~ ParseNamedLocalValueVar ~ _ParseFieldWithTypeAssertion.? ~> (
+      (localVar: LocalValueVar, te: Option[TypeExpression]) =>
+        NamedStructFieldDecl(localVar, te.getOrElse(TypePlaceholder))
     )
   }
   def ParseStructDecl: Rule1[StructLiteralType] = rule {
-    (("(" ~ oneOrMore(_ParseStructFieldDecl).separatedBy("," ~ WhiteSpace) ~ ")") ~> (
+    (("(" ~ oneOrMore(_ParseStructFieldDecl).separatedBy(",") ~ ")") ~> (
       (fields: Seq[NamedStructFieldDecl]) => StructLiteralType(
         LazyParameterPack(fields.flatMap(_.parameterPack.intoLazyPack().exprs)).intoFullPack())
     ))
@@ -860,13 +886,17 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     )
   }
   def ParseEnumDecl: Rule1[TypeAlternation] = rule {
-    "+(" ~ oneOrMore(ParseAlternationCase).separatedBy("," ~ WhiteSpace) ~ ")" ~> (
+    "(" ~ oneOrMore(ParseAlternationCase).separatedBy(",") ~ ")" ~> (
       (cases: Seq[AlternationCase]) => TypeAlternation(
         cases.map {
           case AlternationCase(name, tpe) => (name -> tpe)
         }.toMap
       )
     )
+  }
+
+  def ParseEnumDeclValue: Rule1[ValueAlternation] = rule {
+    ParseEnumDecl ~> ((decl: TypeAlternation) => ValueAlternation(decl))
   }
 
   // def ParseNamedTypePack: Rule1[NamedTypePack] = rule {
@@ -878,7 +908,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   // }
 
   // def ParseEnumBody: Rule1[EnumCases] = rule {
-  //   "(" ~ oneOrMore(ParseEnumCase).separatedBy("," ~ WhiteSpace) ~ ")" ~> (
+  //   "(" ~ oneOrMore(ParseEnumCase).separatedBy(",") ~ ")" ~> (
   //     (cases: Seq[SingleEnumCase]) => EnumCases(cases.map {
   //       case SingleEnumCase(id, fields) => (id -> fields)
   //     }.toMap))
