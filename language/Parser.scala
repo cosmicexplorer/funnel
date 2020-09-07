@@ -29,6 +29,9 @@ object FunnelPEG {
     pattern: Regex,
   ) extends FunnelParseError(s"$kind identifier recognition for $id failed: did not match $pattern")
 
+  case class InvalidCaseName(name: String, pattern: Regex)
+      extends FunnelParseError(s"case names must always match the pattern $pattern: was $name")
+
   case class ParameterPacksHaveDifferentKinds(
     entityDescription: String,
     exprs: Traversable[ExpressionKinds],
@@ -79,7 +82,6 @@ object FunnelPEG {
   }
   case class NamedIdentifier(kind: ExpressionKinds, name: String)
       extends HasExpressionKind {
-    println(s"kind: $kind")
     override def expressionKind = kind
 
     import NamedIdentifier._
@@ -124,6 +126,19 @@ object FunnelPEG {
       NamedIdentifier(kind, name)
     }
   }
+
+  object AlternationCaseName {
+    val caseIdentifier = """[a-z\-][a-zA-Z\-_0-9]*""".r
+  }
+  case class AlternationCaseName(name: String) {
+    import AlternationCaseName._
+
+    name match {
+      case caseIdentifier() => ()
+      case _ => throw InvalidCaseName(name, caseIdentifier)
+    }
+  }
+  case class AlternationCase(name: AlternationCaseName, tpe: TypePackExpression)
 
   sealed abstract class VarKinds extends HasNamedIdentifier
   case class GlobalVar(id: NamedIdentifier) extends VarKinds {
@@ -278,6 +293,14 @@ object FunnelPEG {
   case class GlobalValueVar(g: GlobalVar) extends ValueTerm
   case class LocalValueVar(l: LocalVar) extends ValueTerm
 
+  sealed abstract class ValueAlternationExpression extends ValueExpression {
+    override def parameterPack = StandaloneParameter(this)
+  }
+  case class ValueAlternation(cases: Map[AlternationCaseName, TypePackExpression])
+      extends ValueAlternationExpression {
+    override def extractType = TypeAlternation(cases)
+  }
+
   sealed abstract class ValuePackExpression(pack: ParameterPackKinds)
       extends ValueExpression {
     override def parameterPack = pack
@@ -369,10 +392,28 @@ object FunnelPEG {
   case class NamedTypePack(fulfilled: Map[NamedIdentifier, TypeExpression])
       extends TypePackExpression(NamedParameterPack(fulfilled))
 
-  case class StructLiteralType(fulfilled: Map[NamedIdentifier, TypeExpression])
-      extends TypeExpression {
-    override def parameterPack: ParameterPackKinds = StandaloneParameter(this)
+  sealed abstract class TypeAlternationExpression extends TypeExpression {
+    override def parameterPack = StandaloneParameter(this)
+  }
+  case class TypeAlternation(cases: Map[AlternationCaseName, TypePackExpression])
+      extends TypeAlternationExpression
 
+  object StructLiteralType {
+    def empty(): StructLiteralType = StructLiteralType(Map.empty[NamedIdentifier, TypeExpression])
+
+    def apply(fullPack: FullParameterPack): StructLiteralType = {
+      if (fullPack.expressionKind != TypeKind) {
+        throw FullPackExpressionKindsDidNotMatch(TypeKind, fullPack.expressionKind, fullPack)
+      }
+      StructLiteralType(
+        fulfilled = fullPack.mapping.map {
+          case (localVar, expr) => (localVar.namedIdentifier, expr.asInstanceOf[TypeExpression])
+        }
+      )
+    }
+  }
+  case class StructLiteralType(fulfilled: Map[NamedIdentifier, TypeExpression])
+      extends TypePackExpression(NamedParameterPack(fulfilled)) {
     def matchAgainstParameterPack(pack: ParameterPackKinds): ParameterPackMatchResult = {
       val fullPack = pack.intoLazyPack().intoFullPack()
       val asIdentifiers = fullPack.mapping.map {
@@ -396,8 +437,15 @@ object FunnelPEG {
 
     def isEmpty: Boolean = fulfilled.isEmpty
   }
-  object StructLiteralType {
-    def empty(): StructLiteralType = StructLiteralType(Map.empty)
+
+  object StructLiteralValue {
+    def apply(slt: StructLiteralType): StructLiteralValue = StructLiteralValue(slt.fulfilled)
+  }
+  case class StructLiteralValue(params: Map[NamedIdentifier, TypeExpression])
+      extends ValueExpression {
+    override def parameterPack: ParameterPackKinds = NamedParameterPack(params)
+    override def extractType: TypeExpression = functionParams
+    override def functionParams: StructLiteralType = StructLiteralType(params)
   }
 
   case class ValueWithTypeAssertion(
@@ -425,6 +473,18 @@ object FunnelPEG {
     )
     override def extractType: TypeExpression = StructLiteralType(
       fulfilled = Map(namedIdentifier -> valueWithType.extractType)
+    )
+  }
+
+  case class NamedStructFieldDecl(
+    localVar: LocalValueVar,
+    typeAssertion: TypeExpression,
+  ) extends TypeExpression with HasNamedIdentifier {
+    override def namedIdentifier: NamedIdentifier = localVar.l.localId.namedIdentifier
+    override def parameterPack: ParameterPackKinds = NamedParameterPack(
+      fulfilled = Map(
+        namedIdentifier -> typeAssertion
+      )
     )
   }
 
@@ -564,10 +624,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   def ParseValueIdentifier: Rule1[NamedIdentifier] = rule {
     capture((CharPredicate.LowerAlpha | anyOf("-")) ~ ParseRestOfIdentifier) ~ WhiteSpace ~> (
-      (s: String) => {
-        println(s"s: $s")
-        NamedIdentifier(ValueKind, s)
-      })
+      (s: String) => NamedIdentifier(ValueKind, s))
   }
   def ParseTypeIdentifier: Rule1[NamedIdentifier] = rule {
     capture((CharPredicate.UpperAlpha | anyOf("_")) ~ ParseRestOfIdentifier) ~ WhiteSpace ~> (
@@ -596,7 +653,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   def ParseStringLiteral: Rule1[StringLiteral] = rule {
     // TODO: this won't allow any string literals with backslashes in them whatsoever!!
-    "\"" ~ capture(oneOrMore(!anyOf("\"\\") | "\\\\" | "\\\"")) ~> (StringLiteral(_)) ~ "\""
+    "\"" ~ (capture(oneOrMore(!anyOf("\"\\"))) ~> ((s: String) => StringLiteral(s))) ~ "\""
   }
 
   // TODO: Do this right!!!
@@ -632,7 +689,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       (localVar: LocalValueVar, valueWithType: ValueWithTypeAssertion) => NamedStructField(localVar, valueWithType))
   }
   def ParseNamedValuePack: Rule1[NamedValuePack] = rule {
-    (("(" ~ oneOrMore(_ParseStructField).separatedBy(",") ~ ")") ~> (
+    (("(" ~ oneOrMore(_ParseStructField).separatedBy("," ~ WhiteSpace) ~ ")") ~> (
       (fields: Seq[NamedStructField]) => NamedValuePack(
         LazyParameterPack(fields.flatMap(_.parameterPack.intoLazyPack().exprs)).intoFullPack()))
       | _ParseStructField ~> (
@@ -688,6 +745,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseIntegerLiteral |
     ParseFloatLiteral |
     ParseStringLiteral |
+    ParseStructDeclValue |
     ParseEmptyStruct |
     ParsePositionalValueParameterPack |
     ParseNamedValuePack |
@@ -742,7 +800,10 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def ParseTypeExpression: Rule1[TypeExpression] = rule {
-    ParseTypeTerm
+    ParseTypeTerm |
+    ParseEnumDecl |
+    ParseStructDecl |
+    ParseEnumDecl
   }
 
   // def ParseStructField: Rule1[SingleStructField] = rule {
@@ -757,10 +818,63 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   //     }.toMap))
   // }
 
-  // def ParseEnumCase: Rule1[SingleEnumCase] = rule {
-  //   "+" ~ ParseIdentifier ~ ParseStructBody.? ~> (
-  //     (caseName, innerFields) => SingleEnumCase(caseName, innerFields)
-  //   )
+  def ParseAlternationIdentifier: Rule1[AlternationCaseName] = rule {
+    capture((CharPredicate.LowerAlpha | anyOf("-")) ~ ParseRestOfIdentifier) ~ WhiteSpace ~> (
+      (s: String) => AlternationCaseName(s)
+    )
+  }
+
+  def ParseEmptyStructDecl: Rule1[TypePackExpression] = rule {
+    capture("()".?) ~> ((_: String) => EmptyStructType)
+  }
+  def ParsePositionalStructDecl: Rule1[PositionalTypePack] = rule {
+    "(" ~ oneOrMore(ParseTypeExpression).separatedBy("," ~ WhiteSpace) ~ ")" ~> (
+      (types: Seq[TypeExpression]) => PositionalTypePack(types)
+    )
+  }
+  def _ParseFieldWithTypeAssertion: Rule1[TypeExpression] = rule {
+    optional("<-") ~ "[" ~ ParseTypeExpression ~ "]" ~> (
+      (te: TypeExpression) => te
+    )
+  }
+  def _ParseStructFieldDecl: Rule1[NamedStructFieldDecl] = rule {
+    "\\" ~ ParseNamedLocalValueVar ~ _ParseFieldWithTypeAssertion ~> (
+      (localVar: LocalValueVar, te: TypeExpression) => NamedStructFieldDecl(localVar, te)
+    )
+  }
+  def ParseStructDecl: Rule1[StructLiteralType] = rule {
+    (("(" ~ oneOrMore(_ParseStructFieldDecl).separatedBy("," ~ WhiteSpace) ~ ")") ~> (
+      (fields: Seq[NamedStructFieldDecl]) => StructLiteralType(
+        LazyParameterPack(fields.flatMap(_.parameterPack.intoLazyPack().exprs)).intoFullPack())
+    ))
+  }
+
+  def ParseStructDeclValue: Rule1[StructLiteralValue] = rule {
+    ParseStructDecl ~> ((decl: StructLiteralType) => StructLiteralValue(decl))
+  }
+
+  def ParseAlternationCase: Rule1[AlternationCase] = rule {
+    "\\+" ~ ParseAlternationIdentifier ~ ParseStructDecl.? ~> (
+      (caseName: AlternationCaseName, innerFields: Option[StructLiteralType]) =>
+        AlternationCase(caseName, innerFields.getOrElse(EmptyStructType))
+    )
+  }
+  def ParseEnumDecl: Rule1[TypeAlternation] = rule {
+    "+(" ~ oneOrMore(ParseAlternationCase).separatedBy("," ~ WhiteSpace) ~ ")" ~> (
+      (cases: Seq[AlternationCase]) => TypeAlternation(
+        cases.map {
+          case AlternationCase(name, tpe) => (name -> tpe)
+        }.toMap
+      )
+    )
+  }
+
+  // def ParseNamedTypePack: Rule1[NamedTypePack] = rule {
+  //   (("(" ~ oneOrMore() ")"))
+  // }
+
+  // def ParseTypeParameterPack: Rule1[TypePackExpression] = rule {
+  //   ParseNamedTypePack
   // }
 
   // def ParseEnumBody: Rule1[EnumCases] = rule {
