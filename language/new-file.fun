@@ -331,16 +331,53 @@ $some-arr+(0) <= 3
 # \.seq@[.El...]
 # \.@seq[.El...]
 $reduce[\.Ret, \.El] <= +(
-  +(\.init[.Ret], \.seq ~> $streamable[-[.seq], .El], \.fun[(\.acc[.Ret], \.cur[.El]) => .Ret])
-    => {\.&ret(.init)} => {     # <\.&ret is now a *mutable* scoped local variable with the value of
+  +(\.init[.Ret], \.seq <~ $streamable[-[.seq], .El], \.fun[(\.acc[.Ret], \.cur[.El]) => .Ret])
+    => {\.&ret(.init)} ~> {     # <\.&ret is now a *mutable* scoped local variable with the value of
 #                                  .init>
       .seq@...{
         .&ret <= .fun(.&ret, .-); # <.- is implicitly bound in the body of every ...{} block>
       };
-    } => {^.&ret}
+    } ~> .&ret
 )
 
-@... <- []
+
+
+# Declaration of infix @... macro:
+# The @+{@-(...)} means that we will describe a macro which matches a value expression `...`.
+@+{@-(\.input <~ (\.streamer <- $streamable[-[.input], \.El]))}
+  @> @...
+  <@ @{
+    # +{} in place context will parse!
+    @+{\.@brace-body[$BracedSemicolonSequence]}
+      # But @+{} as a source expression will quote!
+      @> @+{
+        # Declare .&- as a mutable scoped variable!
+        {\.&-[.El],
+         # Declare .&cur-state to have the type of whatever UNQUOTED .input is, at type time!!
+         \.&cur-state[-[@-{.input}]]} => {
+              loop {
+                # ABSOLUTE GENIUS: USE @-{} to unquote!!!!!!!!
+                @-(.streamer).get-next(.&cur-state) => +(
+                  +none => break,
+                  +some.((\.new-obj, \.stream-element)) => {
+                    \.&cur-state <= .new-obj;
+                    \.&- <= .stream-element;
+                    @-{
+                      # Bind \.- to the value of \.&-.
+                      # NB: Variables bound in the containing QUOTED +{} section are NOT visible to
+                      # the body of an UNQUOTED -{} section without an explicit binding here!!!
+                      (\.- <= @+(.&-)) => @+{.brace-body}
+                      # TODO: what does +{.&-} mean? Is it necessary to dereference a variable from
+                      # a quoted context? It's unclear if this syntax distinction is
+                      # necessary. However, it's not unreasonable that it could be *un*ambiguous!
+                    };
+                  }
+                )
+              }
+            }
+
+      }}
+# NB: $BracedSemicolonSequence is presumably a method provided by an AST library.
 
 -[$boolean-and] <- [(\.x[$Boolean], \.y[$Boolean]) => $Boolean]
 

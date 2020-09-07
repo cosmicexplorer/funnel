@@ -311,9 +311,9 @@ $y <= \.x => {
   +OtherProd,
 }
 
-$x <= (\.input[$Integer...]) =~> {
-  +{1 ~ 3 ~ $EOI} ! "oops!",
-  +{1 ~ 3} ~> "asdf",
+$x <= (\.input[$Integer...]) =~> +{
+  +{1 ; 3 ; $EOI} ! "oops!",    # <The ! operator is used to signal an error when parsing.>
+  +{1 ; 3} ~> "asdf",
 } ~=> (
   +("asdf") => -[3],
 ) =-> [
