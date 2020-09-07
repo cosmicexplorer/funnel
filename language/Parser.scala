@@ -73,7 +73,7 @@ object FunnelPEG {
   }
 
   object NamedIdentifier {
-    val nonEmptyIdentifier = """.""".r
+    val nonEmptyIdentifier = """.+""".r
     val valueIdentifier = """[a-z\-][a-zA-Z\-_0-9]*""".r
     val typeIdentifier = """[A-Z_][a-zA-Z\-_0-9]*""".r
   }
@@ -464,6 +464,9 @@ object FunnelPEG {
   case class ValueAssignment(place: GlobalValueVar, ve: ValueExpression)
       extends Statement(ValueKind)
 
+  case class TypeAssignment(place: GlobalTypeVar, te: TypeExpression)
+      extends Statement(TypeKind)
+
   // sealed abstract class ValueParameterPack(val source: ValueExpression, val target: ValueExpression)
   //     extends ValueExpression
   // case class RightDoubleArrowInline(source: ValueExpression, target: ValueExpression)
@@ -538,8 +541,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def Funnel: Rule1[Seq[Statement]] = rule { WhiteSpace ~ ReplOrFile ~ EOI }
 
   def TopLevel: Rule1[Statement] = rule {
-    VariableAssignment
-    // | TypeAssignment
+    VariableAssignment | TypeVariableAssignment
   }
 
   def ReplOrFile: Rule1[Seq[Statement]] = rule {
@@ -549,6 +551,12 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def VariableAssignment: Rule1[Statement] = rule {
     (ParseGlobalValueVar ~ "<=" ~ ParseValueExpression) ~> (
       (v: GlobalValueVar, ve: ValueExpression) => ValueAssignment(v, ve)
+    )
+  }
+
+  def TypeVariableAssignment: Rule1[Statement] = rule {
+    (ParseGlobalTypeVar ~ "<-" ~ ParseTypeExpression) ~> (
+      (t: GlobalTypeVar, te: TypeExpression) => TypeAssignment(t, te)
     )
   }
 

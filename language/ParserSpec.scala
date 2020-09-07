@@ -25,6 +25,19 @@ class ParserSpec extends FreeSpec with Matchers {
           GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
           IntegerLiteral(3),
         ))
+        parse("$point <= (.x(2)[$Integer], .y <= (3))") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "point"))),
+          NamedValuePack(Map(
+            NamedIdentifier(ValueKind, "x") -> ValueWithTypeAssertion(
+              Some(IntegerLiteral(2)),
+              Some(GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer"))))),
+            NamedIdentifier(ValueKind, "y") -> ValueWithTypeAssertion(Some(IntegerLiteral(3)), None),
+          ))
+        ))
+        parse("$X <- $Y") should be (TypeAssignment(
+          GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "X"))),
+          GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Y"))),
+        ))
       }
     }
   }
