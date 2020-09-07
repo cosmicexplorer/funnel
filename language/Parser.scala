@@ -52,6 +52,13 @@ object FunnelPEG {
     "checking the target kind against the full parameter pack kind",
     s"$targetKind did match the kind $fullPackKind from $fullPack")
 
+  case class FailedParameterMatchupError(
+    params: StructLiteralType,
+    arguments: ParameterPackKinds,
+    failedMatch: FailedParameterPackMatch,
+  ) extends FunnelParseError(
+    s"params $params did not match arguments $arguments. failed matches were: $failedMatch")
+
   case class FailedFieldDereferenceError(
     field: LocalVar,
     message: String,
@@ -212,8 +219,23 @@ object FunnelPEG {
       mapping.flatMap {
         case (localVar, expr) => Seq(localVar.expressionKind, expr.expressionKind)
       })
+
+    def isEmpty: Boolean = mapping.isEmpty
   }
 
+  case class ToBeTypeMatched(expr: Expression, typeExpr: TypeExpression)
+  object TypeMatchups {
+    def empty(): TypeMatchups = TypeMatchups(Map.empty)
+  }
+  case class TypeMatchups(typeMatchups: Map[NamedIdentifier, ToBeTypeMatched])
+
+  sealed abstract class ParameterPackMatchResult
+  case class SuccessfulParameterPackMatch(matchups: TypeMatchups)
+      extends ParameterPackMatchResult
+  case class FailedParameterPackMatch(
+    missingParams: StructLiteralType,
+    tooManyParams: FullParameterPack,
+  ) extends ParameterPackMatchResult
 
   // Define AST entities.
   sealed abstract class AstNode
@@ -226,6 +248,7 @@ object FunnelPEG {
     def parameterPack: ParameterPackKinds
     def extractType: TypeExpression
     def functionParams: StructLiteralType
+    def pendingTypeMatchups: TypeMatchups
 
     if (expressionKind != parameterPack.expressionKind) {
       throw ExpressionKindsDidNotMatch(parameterPack, expressionKind)
@@ -234,6 +257,7 @@ object FunnelPEG {
 
   sealed abstract class ValueExpression extends Expression(ValueKind) {
     override val functionParams: StructLiteralType = extractType.functionParams
+    override val pendingTypeMatchups = TypeMatchups.empty()
   }
 
   sealed abstract class ValueTerm extends ValueExpression {
@@ -276,9 +300,40 @@ object FunnelPEG {
     })
   }
 
+  sealed abstract class ComplexValue extends ValueExpression {
+    override def parameterPack: ParameterPackKinds = StandaloneParameter(this)
+    override def extractType: TypeExpression = TypePlaceholder
+  }
+
+  sealed abstract class ChainableValueStart(val startTerm: ValueTerm) extends ComplexValue
+  case class GlobalChainValueStart(gv: GlobalValueVar) extends ChainableValueStart(gv)
+  case class LocalChainValueStart(lv: LocalValueVar) extends ChainableValueStart(lv)
+
+  sealed abstract class ChainableValueIntermediateExpression extends ComplexValue
+  case class StructFieldDereference(localVar: LocalValueVar)
+      extends ChainableValueIntermediateExpression
+
+  case class ChainedValueExpression(
+    start: ChainableValueStart,
+    chain: Seq[ChainableValueIntermediateExpression],
+  ) extends ComplexValue
+
+  case class FunctionCall(source: ValueExpression, arguments: ParameterPackKinds)
+      extends ValueExpression {
+    override val parameterPack: ParameterPackKinds = StandaloneParameter(this)
+    override val extractType: TypeExpression = source.extractType
+    override val pendingTypeMatchups: TypeMatchups =
+      source.functionParams.matchAgainstParameterPack(arguments) match {
+        case failed: FailedParameterPackMatch => throw FailedParameterMatchupError(
+          source.functionParams, arguments, failed)
+        case SuccessfulParameterPackMatch(matchups) => matchups
+      }
+  }
+
   sealed abstract class TypeExpression extends Expression(TypeKind) {
     override val extractType: TypeExpression = this
     override val functionParams: StructLiteralType = StructLiteralType.empty()
+    override val pendingTypeMatchups = TypeMatchups.empty()
   }
 
   sealed abstract class TypeTerm extends TypeExpression {
@@ -299,38 +354,30 @@ object FunnelPEG {
   case class NamedTypePack(fulfilled: Map[NamedIdentifier, TypeExpression])
       extends TypePackExpression(NamedParameterPack(fulfilled))
 
-  // sealed abstract class ChainableValueExpression(val source: ValueExpression)
-  //     extends ValueExpression
-  // case class StructFieldDereference(source: ValueExpression, localVar: LocalVar(ValueKind))
-  //     extends ChainableValueExpression(source) {
-  //   private lazy val sourcePack = source.parameterPack
-  //   private lazy val dereferencedExpression =
-  //     sourcePack.intoLazyPack().fulfilled.get(localVar).getOrElse {
-  //       throw FailedFieldDereferenceError(
-  //         localVar, s"attempted to retrieve from source pack $sourcePack")
-  //     }
-
-  //   override def parameterPack: ParameterPackKinds =
-  //     dereferencedExpression.parameterPack
-  //   override def extractType: TypeExpression = dereferencedExpression.extractType
-  // }
-
-  // case class FunctionCall(source: ValueExpression, arguments: ParameterPackKinds)
-  //     extends ChainableValueExpression(source) {
-  //   private lazy val sourceType = source.extractType
-  //   private lazy val sourceParams = sourceType.functionParams
-
-  //   override def parameterPack: ParameterPackKinds =
-  //     StandaloneParameter(this)
-  //   override def extractType: TypeExpression = {
-  //     // TODO: match `arguments` against `sourceParams`!
-  //     ???
-  //   }
-  // }
-
   case class StructLiteralType(fulfilled: Map[NamedIdentifier, TypeExpression])
       extends TypeExpression {
     override val parameterPack: ParameterPackKinds = StandaloneParameter(this)
+
+    def matchAgainstParameterPack(pack: ParameterPackKinds): ParameterPackMatchResult = {
+      val fullPack = pack.intoLazyPack().intoFullPack()
+      val asIdentifiers = fullPack.mapping.map {
+        case (localVar, expr) => (localVar.namedIdentifier -> expr)
+      }
+      val missingParams = StructLiteralType(fulfilled -- asIdentifiers.keys)
+      val tooManyParams = FullParameterPack(
+        fullPack.mapping -- fulfilled.keys.map(namedIdentifier => LocalVar(LocalNamedIdentifier(namedIdentifier))))
+      if (missingParams.isEmpty && tooManyParams.isEmpty) {
+        val matchedTypeExprs: Seq[(NamedIdentifier, ToBeTypeMatched)] =
+          asIdentifiers.keys.map { namedIdentifier =>
+            (namedIdentifier -> ToBeTypeMatched(
+              asIdentifiers(namedIdentifier),
+              fulfilled(namedIdentifier)))
+          }.toSeq
+        SuccessfulParameterPackMatch(TypeMatchups(matchedTypeExprs.toMap))
+      } else {
+        FailedParameterPackMatch(missingParams, tooManyParams)
+      }
+    }
 
     def isEmpty: Boolean = fulfilled.isEmpty
   }
@@ -411,9 +458,6 @@ object FunnelPEG {
   // case class ValueParameterSpread(source: ValueExpression) extends ValueOperator
 
   // sealed abstract class Value
-
-  // case class FunctionCall(target: ValueExpression, params: )
-  //     extends ValueOperator
 
   // case class SingleValueParameterEvaluation(vp: VarPlace, constraint: Option[TypeExpression])
   // case class ValueParameterPack(mapping: Map[VarPlace, Option[TypeExpression]])
@@ -535,7 +579,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
 
-  def ParseEmptyStruct: Rule1[ValueExpression] = rule {
+  def ParseEmptyStruct: Rule1[ValuePackExpression] = rule {
     capture("()") ~> ((_: String) => EmptyStruct)
   }
   def ParsePositionalValueParameterPack: Rule1[PositionalValueParameterPack] = rule {
@@ -567,28 +611,46 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     )
   }
 
-  // def _InnerDoubleArrowValueExpression: Rule1[FunctionCall] = rule {
-  //   ((_ParseChainedValueExpression ~ "=>" ~ _ParseChainedValueExpression) ~> (
-  //     ((target: StandaloneValueExpression, source: StandaloneValueExpression) =>
-  //       FunctionCall(source, ))
-  //   ))
-  // }
-  // def _ParseChainedValueExpression: Rule1[StandaloneValueExpression] = rule {
-  //   (("(" ~  ~ ")"))
-  // }
+  def ParseParameterPack: Rule1[ValuePackExpression] = rule {
+    ParseEmptyStruct |
+    ParsePositionalValueParameterPack |
+    ParseNamedValuePack
+  }
 
-  // def ParseStandaloneValueExpression: Rule1[StandaloneValueExpression] = rule {
-  //   (("(" ~ ParseValueExpression ~ ")") ~> ((value: ValueExpression) => StandaloneValueExpression(value))
-  //   | _ParseChainedValueExpression ~> ((value: StandaloneValueExpression) => value))
-  // }
+  def _InnerDoubleArrowValueExpression: Rule1[FunctionCall] = rule {
+    ((MaybeParseStandaloneValueExpression ~ "=>" ~ MaybeParseStandaloneValueExpression) ~> (
+      (target: ValueExpression, source: ValueExpression) =>
+        FunctionCall(source, StandaloneParameter(target)))
+      | (MaybeParseStandaloneValueExpression ~ "<=" ~ MaybeParseStandaloneValueExpression) ~> (
+        (source: ValueExpression, target: ValueExpression) =>
+        FunctionCall(source, StandaloneParameter(target))))
+  }
 
-  // def _ParseFunctionCallBase: Rule1[ValueExpression] = rule {
-  //   (("(" ~ ParseValueExpression ~ ")") ~> ((value: ValueExpression) => value)
-  //   | ParseStandaloneValueExpression ~> (value: StandaloneValueExpression) => value)
-  // }
-  // def ParseFunctionCall: Rule1[FunctionCall] = rule {
-  //   _ParseFunctionCallBase ~ ParsePositionalValueParameterPack ~> FunctionCall(_, _)
-  // }
+  def _ParseChainedValueExpressionHelper: Rule1[Seq[ChainableValueIntermediateExpression]] = rule {
+    zeroOrMore(ParseNamedLocalValueVar) ~> (
+      (s: Seq[LocalValueVar]) => s.map(StructFieldDereference(_)))
+  }
+  def _ParseChainedValueExpression: Rule1[ChainedValueExpression] = rule {
+    ((ParseGlobalValueVar ~ _ParseChainedValueExpressionHelper) ~> (
+      (gv: GlobalValueVar, chain: Seq[ChainableValueIntermediateExpression]) =>
+        ChainedValueExpression(start = GlobalChainValueStart(gv), chain = chain))
+      | (ParseNamedLocalValueVar ~ _ParseChainedValueExpressionHelper) ~> (
+        (lv: LocalValueVar, chain: Seq[ChainableValueIntermediateExpression]) =>
+        ChainedValueExpression(start = LocalChainValueStart(lv), chain = chain)))
+  }
+
+  def _ParseStandaloneValueExpressionHelper: Rule1[StandaloneValueExpression] = rule {
+    _ParseChainedValueExpression ~> ((chainedValue: ChainedValueExpression) => StandaloneValueExpression(chainedValue))
+  }
+  def MaybeParseStandaloneValueExpression: Rule1[ValueExpression] = rule {
+    (("(" ~ _ParseBaseValueExpression ~ ")") ~> ((value: ValueExpression) => value)
+    | _ParseStandaloneValueExpressionHelper ~> ((value: StandaloneValueExpression) => value))
+  }
+
+  def ParseFunctionCall: Rule1[FunctionCall] = rule {
+    ((MaybeParseStandaloneValueExpression ~ optional("<=") ~ ParseParameterPack) ~> (
+      (ve: ValueExpression, vpe: ValuePackExpression) => FunctionCall(ve, vpe.parameterPack)))
+  }
 
   def _ParseBaseValueExpression: Rule1[ValueExpression] = rule {
     ParseGlobalValueVar |
@@ -598,7 +660,8 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseStringLiteral |
     ParseEmptyStruct |
     ParsePositionalValueParameterPack |
-    ParseNamedValuePack
+    ParseNamedValuePack |
+    ParseFunctionCall
   }
   def ParseValueExpression: Rule1[ValueExpression] = rule {
     (("(" ~ _ParseBaseValueExpression ~ ")") ~> ((value: ValueExpression) => value)
