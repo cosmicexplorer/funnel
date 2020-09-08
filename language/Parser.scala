@@ -527,13 +527,31 @@ object FunnelPEG {
   case object FloatTypeLiteral extends TypeLiteral
   case object StringTypeLiteral extends TypeLiteral
 
-  // sealed abstract class ValueOperator extends ValueExpression
-
   case class ValueAssignment(place: GlobalValueVar, ve: ValueExpression)
       extends Statement(ValueKind)
 
   case class TypeAssignment(place: GlobalTypeVar, te: TypeExpression)
       extends Statement(TypeKind)
+
+  sealed abstract class MethodSignature extends TypeExpression
+  case class MethodType(
+    params: StructLiteralType,
+    output: TypeExpression,
+  ) extends MethodSignature {
+    override def parameterPack = output.parameterPack
+    override def functionParams = params
+  }
+
+  sealed abstract class MethodDefinition extends ValueExpression
+  case class AnonymousMethod(
+    params: StructLiteralValue,
+    output: ValueExpression,
+  ) extends MethodDefinition {
+    override def parameterPack = output.parameterPack
+    override def extractType = MethodType(
+      StructLiteralType(params.params),
+      output.extractType)
+  }
 
   // sealed abstract class ValueParameterPack(val source: ValueExpression, val target: ValueExpression)
   //     extends ValueExpression
@@ -759,6 +777,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def _ParseBaseValueExpression: Rule1[ValueExpression] = rule {
+    ParseAnonymousMethod |
     ParseGlobalValueVar |
     ParseNamedLocalValueVar |
     ParseValueLiteral |
@@ -818,14 +837,21 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def _ParseAtomicTypeExpressions: Rule1[TypeExpression] = rule {
-    "<" ~ (ParseStructDecl | ParseEnumDecl) ~ ">" ~> (
-      (te: TypeExpression) => te
-    )
+    ("<" ~ (ParseStructDecl | ParseEnumDecl) ~ ">" ~> (
+      (te: TypeExpression) => te)
+      | "<" ~ ParseAnonymousMethod ~ ">" ~> (
+        (anon: AnonymousMethod) => anon.extractType
+      ))
   }
 
-  def ParseTypeExpression: Rule1[TypeExpression] = rule {
+  def _ParseBaseTypeExpression: Rule1[TypeExpression] = rule {
     ParseTypeTerm |
+    ParseAnonymousMethodSignature |
     _ParseAtomicTypeExpressions
+  }
+  def ParseTypeExpression: Rule1[TypeExpression] = rule {
+    (("[" ~ _ParseBaseTypeExpression ~ "]") ~> ((ty: TypeExpression) => ty)
+     | _ParseBaseTypeExpression ~> ((ty: TypeExpression) => ty))
   }
 
   // def ParseStructField: Rule1[SingleStructField] = rule {
@@ -897,6 +923,18 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   def ParseEnumDeclValue: Rule1[ValueAlternation] = rule {
     ParseEnumDecl ~> ((decl: TypeAlternation) => ValueAlternation(decl))
+  }
+
+  def ParseAnonymousMethod: Rule1[AnonymousMethod] = rule {
+    ParseStructDeclValue ~ "=>" ~ ParseValueExpression ~> (
+      (slv: StructLiteralValue, ve: ValueExpression) => AnonymousMethod(slv, ve)
+    )
+  }
+
+  def ParseAnonymousMethodSignature: Rule1[MethodSignature] = rule {
+    ParseStructDecl ~ "=>" ~ ParseTypeExpression ~> (
+      (slt: StructLiteralType, te: TypeExpression) => MethodType(slt, te)
+    )
   }
 
   // def ParseNamedTypePack: Rule1[NamedTypePack] = rule {

@@ -72,33 +72,21 @@ class ParserSpec extends FreeSpec with Matchers {
       }
 
       "should be able to define functions with a variable assignment" in {
-        parse("$f <= (\\.x <- $Integer) => .x") should be (null)
+        parse("$f <= (\\.x <- $Integer) => .x") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
+            )),
+            LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x"))))
+          )
+        ))
       }
     }
   }
 
   // "FunnelPEG" - {
   //   "when parsing top-level expressions" - {
-  //     "should correctly parse variable and type assignments" in {
-  //       parse("$point <= (.x, .y <- $Integer)") should be (StructDefinition(
-  //         TypePlace(TypeWrapper(IdentifierWrapper("point")), None),
-  //         StructFields(Map(
-  //           IdentifierWrapper("x") -> None,
-  //           IdentifierWrapper("y") -> Some(TypeName(IdentifierWrapper("integer")))
-  //         ))))
-  //       parse("$x <= 3") should be (ValueAssignment(
-  //         VarPlace(VarWrapper(IdentifierWrapper("x"))),
-  //         NumericLiteral(3)))
-  //       parse(":list <= (+none, +cons(.car <- :element, .cdr <- :Self))") should be (EnumDefinition(
-  //         TypePlace(TypeWrapper(IdentifierWrapper("list")), None),
-  //         EnumCases(Map(
-  //           IdentifierWrapper("none") -> None,
-  //           IdentifierWrapper("cons") -> Some(StructFields(Map(
-  //             IdentifierWrapper("car") -> Some(TypeName(IdentifierWrapper("element"))),
-  //             IdentifierWrapper("cdr") -> Some(TypeName(IdentifierWrapper("Self"))))))))
-  //       ))
-  //     }
-
   //     "should be able to define functions with a variable assignment" in {
   //       parse("$f <= ($x <- :integer) => $x") should be (ValueAssignment(
   //         VarPlace(VarWrapper(IdentifierWrapper("f"))),
