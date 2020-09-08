@@ -783,11 +783,9 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   def _ParseBaseValueExpression: Rule1[ValueExpression] = rule {
     ParseStructDeclValueKeepingAfter |
-    // ParseAnonymousMethod |
     ParseGlobalValueVar |
     ParseNamedLocalValueVar |
     ParseValueLiteral |
-    // ParseStructDeclValue |
     ParseEnumDeclValue |
     ParseEmptyStruct |
     ParsePositionalValueParameterPack |

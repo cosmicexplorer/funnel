@@ -123,55 +123,38 @@ class ParserSpec extends FreeSpec with Matchers {
           )
         ))
       }
+
+      "should allow some or no whitespace after all terminals and identifiers" in {
+        parse("$f <= ( \\.x <- $Integer ) => .x") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
+            )),
+            LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+          )
+        ))
+        parse("$f<=\\.x<-$Integer=>.x") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
+            )),
+            LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+          )
+        ))
+      }
+
+      // TODO: implement implicit conversions!!!
+      "should be able to register and declare implicit conversions with ~>" in {
+        // parse("$x <~ 3[$Integer]") should be
+        // parse("$f <~ \\.x[$String] => $string-length")
+        // parse("")
+      }
     }
+
+    // TODO: make type parameter packs work!!!
+
+    // TODO: implement the +{} parser syntax!!!
   }
-
-  // "FunnelPEG" - {
-  //   "when parsing top-level expressions" - {
-  //     "should respect the associativity of the arrow operators" in {
-  //       parse("$f <= $x <- :integer => $x") should be (ValueAssignment(
-  //         VarPlace(VarWrapper(IdentifierWrapper("f"))),
-  //         AnonymousMethodDefinition(ValueParameterPack(Map(
-  //           VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
-  //             Some(TypeName(IdentifierWrapper("integer"))))),
-  //           Variable(VarWrapper(IdentifierWrapper("x"))))
-  //       ))
-  //     }
-
-  //     "should allow some or no whitespace after all terminals and identifiers" in {
-  //       parse("$f <= ( $x <- :integer ) => $x") should be (ValueAssignment(
-  //         VarPlace(VarWrapper(IdentifierWrapper("f"))),
-  //         AnonymousMethodDefinition(ValueParameterPack(Map(
-  //           VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
-  //             Some(TypeName(IdentifierWrapper("integer"))))),
-  //           Variable(VarWrapper(IdentifierWrapper("x"))))
-  //       ))
-  //       parse("$f<=$x<-:integer=>$x") should be (ValueAssignment(
-  //         VarPlace(VarWrapper(IdentifierWrapper("f"))),
-  //         AnonymousMethodDefinition(ValueParameterPack(Map(
-  //           VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
-  //             Some(TypeName(IdentifierWrapper("integer"))))),
-  //           Variable(VarWrapper(IdentifierWrapper("x"))))
-  //       ))
-  //     }
-
-  //     "should be able to parse typeclass definitions" in {
-  //       parse("&typeclass <= ($f <= :integer; $x <= ($y <- :x) => :z)") should be (TypeclassDefinition(
-  //         TypeclassPlace(
-  //           TypeclassWrapper(IdentifierWrapper("typeclass")),
-  //           None,
-  //         ),
-  //         TypeclassDefnFields(Map(
-  //           VarPlace(VarWrapper(IdentifierWrapper("f"))) ->
-  //             MethodTypeAnnotation(Map.empty, TypeName(IdentifierWrapper("integer"))),
-  //           VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
-  //             MethodTypeAnnotation(Map(
-  //               IdentifierWrapper("y") -> Some(TypeName(IdentifierWrapper("x")))
-  //             ),
-  //               TypeName(IdentifierWrapper("z")))
-  //         ))
-  //       ))
-  //     }
-  //   }
-  // }
 }
