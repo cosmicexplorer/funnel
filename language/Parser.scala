@@ -53,7 +53,7 @@ object FunnelPEG {
     fullPack: FullParameterPack,
   ) extends InternalError(
     "checking the target kind against the full parameter pack kind",
-    s"$targetKind did match the kind $fullPackKind from $fullPack")
+    s"$targetKind did not match the kind $fullPackKind from $fullPack")
 
   case class FailedParameterMatchupError(
     params: StructLiteralType,
@@ -454,6 +454,11 @@ object FunnelPEG {
     override def parameterPack: ParameterPackKinds = NamedParameterPack(params)
     override def extractType: TypeExpression = functionParams
     override def functionParams: StructLiteralType = StructLiteralType(params)
+    def dereferenceParamsPack(): NamedValuePack = NamedValuePack(
+      parameterPack.intoLazyPack().intoFullPack().mapping.map {
+        case (localVar, _) => (localVar.namedIdentifier, LocalValueVar(localVar))
+      }
+    )
   }
 
   case class ValueWithTypeAssertion(
@@ -777,11 +782,12 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def _ParseBaseValueExpression: Rule1[ValueExpression] = rule {
-    ParseAnonymousMethod |
+    ParseStructDeclValueKeepingAfter |
+    // ParseAnonymousMethod |
     ParseGlobalValueVar |
     ParseNamedLocalValueVar |
     ParseValueLiteral |
-    ParseStructDeclValue |
+    // ParseStructDeclValue |
     ParseEnumDeclValue |
     ParseEmptyStruct |
     ParsePositionalValueParameterPack |
@@ -839,7 +845,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def _ParseAtomicTypeExpressions: Rule1[TypeExpression] = rule {
     ("<" ~ (ParseStructDecl | ParseEnumDecl) ~ ">" ~> (
       (te: TypeExpression) => te)
-      | "<" ~ ParseAnonymousMethod ~ ">" ~> (
+      | "<" ~ ParseStructDeclValueKeepingAfter ~ ">" ~> (
         (anon: AnonymousMethod) => anon.extractType
       ))
   }
@@ -894,15 +900,39 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
         NamedStructFieldDecl(localVar, te.getOrElse(TypePlaceholder))
     )
   }
+  def _ParseInlineFieldType: Rule1[TypeExpression] = rule {
+    ("[" ~ ParseTypeExpression ~ "]"
+     | "<-" ~ ParseTypeExpression)
+  }
+  def _ParseInlineFieldDecl: Rule1[NamedStructFieldDecl] = rule {
+    "\\" ~ ParseNamedLocalValueVar ~ optional(_ParseInlineFieldType) ~> (
+      (localVar: LocalValueVar, te: Option[TypeExpression]) =>
+        NamedStructFieldDecl(localVar, te.getOrElse(TypePlaceholder))
+    )
+  }
   def ParseStructDecl: Rule1[StructLiteralType] = rule {
-    (("(" ~ oneOrMore(_ParseStructFieldDecl).separatedBy(",") ~ ")") ~> (
-      (fields: Seq[NamedStructFieldDecl]) => StructLiteralType(
+    (((_ParseInlineFieldDecl) ~> (
+        (decl: NamedStructFieldDecl) => StructLiteralType(
+          decl.parameterPack.intoLazyPack().intoFullPack())))
+      | ("(" ~ oneOrMore(_ParseStructFieldDecl).separatedBy(",") ~ ")") ~> (
+        (fields: Seq[NamedStructFieldDecl]) => StructLiteralType(
         LazyParameterPack(fields.flatMap(_.parameterPack.intoLazyPack().exprs)).intoFullPack())
     ))
   }
 
   def ParseStructDeclValue: Rule1[StructLiteralValue] = rule {
     ParseStructDecl ~> ((decl: StructLiteralType) => StructLiteralValue(decl))
+  }
+
+  def ParseStructDeclValueKeepingAfter: Rule1[AnonymousMethod] = rule {
+    ((ParseStructDeclValue ~ "=>" ~ ParseValueExpression ~> (
+      (slv: StructLiteralValue, ve: ValueExpression) => AnonymousMethod(slv, ve)
+    ))
+      | ((ParseStructDeclValue ~ EOI ~> (
+        (slv: StructLiteralValue) => AnonymousMethod(
+          slv,
+          slv.dereferenceParamsPack())
+      ))))
   }
 
   def ParseAlternationCase: Rule1[AlternationCase] = rule {
@@ -923,12 +953,6 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   def ParseEnumDeclValue: Rule1[ValueAlternation] = rule {
     ParseEnumDecl ~> ((decl: TypeAlternation) => ValueAlternation(decl))
-  }
-
-  def ParseAnonymousMethod: Rule1[AnonymousMethod] = rule {
-    ParseStructDeclValue ~ "=>" ~ ParseValueExpression ~> (
-      (slv: StructLiteralValue, ve: ValueExpression) => AnonymousMethod(slv, ve)
-    )
   }
 
   def ParseAnonymousMethodSignature: Rule1[MethodSignature] = rule {

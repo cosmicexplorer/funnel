@@ -27,10 +27,17 @@ class ParserSpec extends FreeSpec with Matchers {
         ))
         parse("$x <= (\\.x, \\.y)") should be (ValueAssignment(
           GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
-          StructLiteralValue(Map(
-            NamedIdentifier(ValueKind, "x") -> TypePlaceholder,
-            NamedIdentifier(ValueKind, "y") -> TypePlaceholder,
-          ))
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> TypePlaceholder,
+              NamedIdentifier(ValueKind, "y") -> TypePlaceholder,
+            )),
+            NamedValuePack(Map(
+              NamedIdentifier(ValueKind, "x") -> LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+              NamedIdentifier(ValueKind, "y") -> LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "y"))))
+            )
+            )
+          )
         ))
         parse("$x <= (3, \"a\", 0.0)") should be (ValueAssignment(
           GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
@@ -81,22 +88,46 @@ class ParserSpec extends FreeSpec with Matchers {
             LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x"))))
           )
         ))
+        parse("$f <= \\.x[$Integer]") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer"))),
+            )),
+            NamedValuePack(Map(
+              NamedIdentifier(ValueKind, "x") -> LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+            ))
+          )
+        ))
+        parse("$F <- [(\\.x[$Integer]) => <\\.x>]") should be (TypeAssignment(
+          GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "F"))),
+          MethodType(
+            StructLiteralType(Map(
+              NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
+            )),
+            StructLiteralType(Map(
+              NamedIdentifier(ValueKind, "x") -> TypePlaceholder,
+            )),
+          )
+        ))
+      }
+
+      "should respect the associativity of the arrow operators" in {
+        parse("$f <= \\.x <- $Integer => .x") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
+            )),
+            LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+          )
+        ))
       }
     }
   }
 
   // "FunnelPEG" - {
   //   "when parsing top-level expressions" - {
-  //     "should be able to define functions with a variable assignment" in {
-  //       parse("$f <= ($x <- :integer) => $x") should be (ValueAssignment(
-  //         VarPlace(VarWrapper(IdentifierWrapper("f"))),
-  //         AnonymousMethodDefinition(ValueParameterPack(Map(
-  //           VarPlace(VarWrapper(IdentifierWrapper("x"))) ->
-  //             Some(TypeName(IdentifierWrapper("integer"))))),
-  //           Variable(VarWrapper(IdentifierWrapper("x"))))
-  //       ))
-  //     }
-
   //     "should respect the associativity of the arrow operators" in {
   //       parse("$f <= $x <- :integer => $x") should be (ValueAssignment(
   //         VarPlace(VarWrapper(IdentifierWrapper("f"))),
