@@ -70,7 +70,7 @@ class ParserSpec extends FreeSpec with Matchers {
             ))
           ))
         ))
-        parse("$X <- <(\\.x[$Integer])>") should be (TypeAssignment(
+        parse("$X <- <(.x[$Integer])>") should be (TypeAssignment(
           GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "X"))),
           StructLiteralType(Map(
             NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
@@ -99,7 +99,7 @@ class ParserSpec extends FreeSpec with Matchers {
             ))
           )
         ))
-        parse("$F <- [(\\.x[$Integer]) => <\\.x>]") should be (TypeAssignment(
+        parse("$F <- [(\\.x[$Integer]) => <.x>]") should be (TypeAssignment(
           GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "F"))),
           MethodType(
             StructLiteralType(Map(
@@ -141,6 +141,24 @@ class ParserSpec extends FreeSpec with Matchers {
               NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
             )),
             LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+          )
+        ))
+      }
+
+      "should allow value and/or type assertions at the top level" in {
+        parse("3 <= 3") should be (ValueAssertion(
+          IntegerLiteral(3),
+          IntegerLiteral(3)
+        ))
+        parse("<$f> <- [\\.p => <.p>]") should be (TypeAssertion(
+          TypePlaceholder,
+          MethodType(
+            StructLiteralType(Map(
+              NamedIdentifier(ValueKind, "p") -> TypePlaceholder,
+            )),
+            StructLiteralType(Map(
+              NamedIdentifier(ValueKind, "p") -> TypePlaceholder,
+            )),
           )
         ))
       }

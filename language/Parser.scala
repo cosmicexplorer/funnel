@@ -501,22 +501,6 @@ object FunnelPEG {
     )
   }
 
-  // sealed abstract class UnaryOperator[
-  //   SourceKind <: ExpressionKinds,
-  //   TargetKind <: ExpressionKinds,
-  // ](val source: Expression[SourceKind]) extends Expression[TargetKind] {
-  //   override def parameterPack: ParameterPackKinds[TargetKind] =
-  //     StandaloneParameter[TargetKind](transformed)
-  //   override def extractType: TypeExpression = transformed.extractType
-
-  //   def transform(): Expression[TargetKind]
-  //   private lazy val transformed = transform()
-  // }
-  // case class TypeExtractionOperator(ve: ValueExpression)
-  //     extends UnaryOperator[ValueKind, TypeKind](ve) {
-  //   override def transform(): Expression = ve.extractType
-  // }
-
   sealed abstract class ValueLiteral(ty: TypeLiteral) extends ValueExpression {
     override def extractType = ty
     override def parameterPack: ParameterPackKinds = StandaloneParameter(this)
@@ -531,12 +515,6 @@ object FunnelPEG {
   case object IntegerTypeLiteral extends TypeLiteral
   case object FloatTypeLiteral extends TypeLiteral
   case object StringTypeLiteral extends TypeLiteral
-
-  case class ValueAssignment(place: GlobalValueVar, ve: ValueExpression)
-      extends Statement(ValueKind)
-
-  case class TypeAssignment(place: GlobalTypeVar, te: TypeExpression)
-      extends Statement(TypeKind)
 
   sealed abstract class MethodSignature extends TypeExpression
   case class MethodType(
@@ -558,71 +536,19 @@ object FunnelPEG {
       output.extractType)
   }
 
-  // sealed abstract class ValueParameterPack(val source: ValueExpression, val target: ValueExpression)
-  //     extends ValueExpression
-  // case class RightDoubleArrowInline(source: ValueExpression, target: ValueExpression)
-  //     extends ValueParameterPack(source, target)
-  // case class LeftDoubleArrowInline(source: ValueExpression, target: ValueExpression)
-  //     extends ValueParameterPack(source, target)
+  sealed abstract class ValueStatement extends Statement(ValueKind)
+  case class ValueAssignment(place: GlobalValueVar, ve: ValueExpression) extends ValueStatement
+  case class ValueAssertion(lhs: ValueExpression, rhs: ValueExpression) extends ValueStatement
+  // case class ModuleScopeImplicitRegistration(place: GlobalValueVar, ve: ValueExpression)
+  //     extends ValueStatement
 
-  // case class ValueParameterSpread(source: ValueExpression) extends ValueOperator
+  // case class LocalImplicitParameterDecl(
+  //   localVar: LocalValueVar,
+  // ) extends TypeExpression with HasNamedIdentifier
 
-  // sealed abstract class Value
-
-  // case class SingleValueParameterEvaluation(vp: VarPlace, constraint: Option[TypeExpression])
-  // case class ValueParameterPack(mapping: Map[VarPlace, Option[TypeExpression]])
-  // object ValueParameterPack {
-  //   def empty() = ValueParameterPack(Map.empty)
-  // }
-
-  // case class SingleTypeParameterEvaluation(tp: TypePlace, constraint: TypeExpression)
-  // case class TypeParameterPack(mapping: Map[TypePlace, TypeExpression])
-  // object TypeParameterPack {
-  //   def empty() = TypeParameterPack(Map.empty)
-  // }
-
-  // sealed abstract class LeftSingleArrowTopLevel extends Statement
-  // sealed abstract class TypeDefinition extends LeftSingleArrowTopLevel
-
-  // case class StructFields(fields: Map[ExpressionKinds, Option[TypeExpression]])
-  // case class StructDefinition(tyn: TypePlace, fields: StructFields) extends TypeDefinition
-
-  // sealed abstract class ObjectStructureDeclaration extends TypeDefinition
-  // case class SingleStructField(id: ExpressionKinds, constraint: Option[TypeExpression]) extends ObjectStructureDeclaration
-  // case class SingleEnumCase(id: ExpressionKinds, fields: Option[StructFields]) extends ObjectStructureDeclaration
-
-  // case class EnumCases(cases: Map[ExpressionKinds, Option[StructFields]])
-  // case class EnumDefinition(tyn: TypePlace, cases: EnumCases) extends TypeDefinition
-
-  // case class MethodTypeAnnotation(
-  //   params: Map[Identifier, Option[TypeExpression]],
-  //   result: TypeExpression
-  // ) extends TypeExpression
-  // case class MethodSignature(place: VarPlace, annot: MethodTypeAnnotation)
-  // case class MethodBody(statements: Seq[Statement]) extends ValueExpression
-  // case class AnonymousMethodDefinition(vpp: ValueParameterPack, expr: ValueExpression)
-  //     extends ValueExpression
-  // case class MethodDefinition(place: VarPlace, vpp: ValueParameterPack, expr: ValueExpression) extends ValueExpression
-
-  // sealed abstract class RightDoubleArrow extends ValueOperator
-  // case class CreateValueParameter(vpp: ValueParameterPack) extends RightDoubleArrow
-  // sealed abstract class DotOperator extends ValueOperator
-  // case class ExtractMember(ve: ValueExpression, id: Identifier) extends DotOperator
-
-  // sealed abstract class TypeOperator extends TypeExpression
-  // sealed abstract class LeftSingleArrow extends TypeOperator
-  // case class VariableTypeAssertion(te: TypeExpression, vpe: ValuePlaceExpression)
-  //     extends LeftSingleArrow
-  // case class TypeParameterNameAssignment(tpe: TypePlaceExpression, tpp: TypeParameterPack)
-  //     extends LeftSingleArrow
-  // sealed abstract class RightSingleArrow extends TypeOperator
-  // case class CreateTypeParameter(tpp: TypeParameterPack, te: TypeExpression)
-  //     extends RightSingleArrow
-
-  // sealed abstract class BasicTypeExpression extends TypeExpression
-  // case class TypeName(id: Identifier) extends BasicTypeExpression
-  // case class TypeNameWithParams(id: Identifier, tpp: TypeParameterPack)
-  //     extends BasicTypeExpression
+  sealed abstract class TypeStatement extends Statement(TypeKind)
+  case class TypeAssignment(place: GlobalTypeVar, te: TypeExpression) extends TypeStatement
+  case class TypeAssertion(lhs: TypeExpression, rhs: TypeExpression) extends TypeStatement
 }
 
 class FunnelPEG(override val input: ParserInput) extends Parser {
@@ -632,22 +558,33 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def Funnel: Rule1[Seq[Statement]] = rule { WhiteSpace ~ ReplOrFile ~ EOI }
 
   def TopLevel: Rule1[Statement] = rule {
-    VariableAssignment | TypeVariableAssignment
+    ParseValueAssignment | ParseValueAssertion | ParseTypeAssignment | ParseTypeAssertion
   }
 
   def ReplOrFile: Rule1[Seq[Statement]] = rule {
     zeroOrMore(TopLevel) ~> ((s: Seq[Statement]) => s)
   }
 
-  def VariableAssignment: Rule1[Statement] = rule {
+  def ParseValueAssignment: Rule1[ValueAssignment] = rule {
     (ParseGlobalValueVar ~ "<=" ~ ParseValueExpression) ~> (
       (v: GlobalValueVar, ve: ValueExpression) => ValueAssignment(v, ve)
     )
   }
+  def ParseValueAssertion: Rule1[ValueAssertion] = rule {
+    // TODO: Why is this WhiteSpace necessary?
+    (ParseValueExpression ~ WhiteSpace ~ "<=" ~ ParseValueExpression) ~> (
+      (lhs: ValueExpression, rhs: ValueExpression) => ValueAssertion(lhs, rhs)
+    )
+  }
 
-  def TypeVariableAssignment: Rule1[Statement] = rule {
+  def ParseTypeAssignment: Rule1[TypeAssignment] = rule {
     (ParseGlobalTypeVar ~ "<-" ~ ParseTypeExpression) ~> (
       (t: GlobalTypeVar, te: TypeExpression) => TypeAssignment(t, te)
+    )
+  }
+  def ParseTypeAssertion: Rule1[TypeAssertion] = rule {
+    (ParseTypeExpression ~ "<-" ~ ParseTypeExpression) ~> (
+      (lhs: TypeExpression, rhs: TypeExpression) => TypeAssertion(lhs, rhs)
     )
   }
 
@@ -797,78 +734,70 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     | _ParseBaseValueExpression ~> ((value: ValueExpression) => value))
   }
 
-  // def ParseValueExpression: Rule1[ValueExpression] = rule {
-  //   ParseAnonymousMethod | ParseVariableRefName | ParseLiterals
-  // }
-
-  // def ParseTypeNameCreation: Rule1[TypePlace] = rule {
-  //   ":" ~ ParseIdentifier ~> ((id: Identifier) => TypePlace(TypeWrapper(id), constraint = None))
-  // }
-
-  // def TypeAssignment: Rule1[TypeDefinition] = rule {
-  //   StructAssignment | EnumAssignment
-  // }
-
-  // def StructAssignment: Rule1[StructDefinition] = rule {
-  //   ParseTypeNameCreation ~ "<=" ~ ParseStructBody ~> (StructDefinition(_, _))
-  // }
-
-  // def EnumAssignment: Rule1[EnumDefinition] = rule {
-  //   ParseTypeNameCreation ~ "<=" ~ ParseEnumBody ~> (EnumDefinition(_, _))
-  // }
-
-  // def ParseTypeAssertion: Rule1[VariableTypeAssertion] = rule {
-  //   ParseVariablePlaceName ~ "<-" ~ ParseTypeExpression ~> ((varPlace, typeExpr) =>
-  //   VariableTypeAssertion(typeExpr, varPlace))
-  // }
-
-  // def ParseTypeParameterEvaluation: Rule1[SingleTypeParameterEvaluation] = rule {
-  //   "<-" ~ "(" ~ ParseTypeNameCreation ~ "<-" ~ ParseTypeExpression ~ ")" ~> (
-  //     (typePlace, typeExpr) => SingleTypeParameterEvaluation(typePlace, typeExpr))
-  // }
-
-  // def ParseTypeParameterPack: Rule1[TypeParameterPack] = rule {
-  //   zeroOrMore(ParseTypeParameterEvaluation) ~> ((params: Seq[SingleTypeParameterEvaluation]) => TypeParameterPack(
-  //     mapping = params.map {
-  //       case SingleTypeParameterEvaluation(ty, constraint) => (ty -> constraint)
-  //     }.toMap
-  //   ))
-  // }
-
   def ParseTypeTerm: Rule1[TypeTerm] = rule {
     ParseGlobalTypeVar |
     ParseNamedLocalTypeVar
   }
 
-  def _ParseAtomicTypeExpressions: Rule1[TypeExpression] = rule {
-    ("<" ~ (ParseStructDecl | ParseEnumDecl) ~ ">" ~> (
-      (te: TypeExpression) => te)
-      | "<" ~ ParseStructDeclValueKeepingAfter ~ ">" ~> (
-        (anon: AnonymousMethod) => anon.extractType
-      ))
+  // Avoid having to use the backslashes in struct and enum literals within the body of the type
+  // extraction (<...>) operator.
+  def _ParseReducedStructFieldDecl: Rule1[NamedStructFieldDecl] = rule {
+    ParseNamedLocalValueVar ~ _ParseFieldWithTypeAssertion.? ~> (
+      (localVar: LocalValueVar, te: Option[TypeExpression]) =>
+        NamedStructFieldDecl(localVar, te.getOrElse(TypePlaceholder))
+    )
+  }
+  def _ParseReducedInlineFieldDecl: Rule1[NamedStructFieldDecl] = rule {
+    ParseNamedLocalValueVar ~ optional(_ParseInlineFieldType) ~> (
+      (localVar: LocalValueVar, te: Option[TypeExpression]) =>
+        NamedStructFieldDecl(localVar, te.getOrElse(TypePlaceholder))
+    )
+  }
+  def ParseReducedStructDecl: Rule1[StructLiteralType] = rule {
+    (((_ParseReducedInlineFieldDecl) ~> (
+        (decl: NamedStructFieldDecl) => StructLiteralType(
+          decl.parameterPack.intoLazyPack().intoFullPack())))
+      | ("(" ~ oneOrMore(_ParseReducedStructFieldDecl).separatedBy(",") ~ ")") ~> (
+        (fields: Seq[NamedStructFieldDecl]) => StructLiteralType(
+        LazyParameterPack(fields.flatMap(_.parameterPack.intoLazyPack().exprs)).intoFullPack())
+    ))
+  }
+
+  def _ParseReducedAlternationCase: Rule1[AlternationCase] = rule {
+    "+" ~ ParseAlternationIdentifier ~ ParseReducedStructDecl.? ~> (
+      (caseName: AlternationCaseName, innerFields: Option[StructLiteralType]) =>
+      AlternationCase(caseName, innerFields.getOrElse(EmptyStructType))
+    )
+  }
+  def ParseReducedEnumDecl: Rule1[TypeAlternation] = rule {
+    "(" ~ oneOrMore(_ParseReducedAlternationCase).separatedBy(",") ~ ")" ~> (
+      (cases: Seq[AlternationCase]) => TypeAlternation(
+        cases.map {
+          case AlternationCase(name, tpe) => (name -> tpe)
+        }.toMap
+      )
+    )
+  }
+
+  def _KnownTypeExtractableExpressions: Rule1[TypeExpression] = rule {
+    ((ParseReducedStructDecl | ParseReducedEnumDecl) ~> ((te: TypeExpression) => te)
+      // | ParseStructDeclValueKeepingAfter ~> ((anon: AnonymousMethod) => anon.extractType)
+      | ParseValueExpression ~> ((ve: ValueExpression) => ve.extractType))
+  }
+  // This implements the "type extraction operator" <...>.
+  def _ParseTypeExtractableExpressions: Rule1[TypeExpression] = rule {
+    "<" ~ _KnownTypeExtractableExpressions ~ ">"
   }
 
   def _ParseBaseTypeExpression: Rule1[TypeExpression] = rule {
     ParseTypeTerm |
     ParseAnonymousMethodSignature |
-    _ParseAtomicTypeExpressions
+    _ParseTypeExtractableExpressions
   }
   def ParseTypeExpression: Rule1[TypeExpression] = rule {
     (("[" ~ _ParseBaseTypeExpression ~ "]") ~> ((ty: TypeExpression) => ty)
      | _ParseBaseTypeExpression ~> ((ty: TypeExpression) => ty))
   }
-
-  // def ParseStructField: Rule1[SingleStructField] = rule {
-  //   "." ~ ParseIdentifier ~ ("<-" ~ ParseTypeExpression).? ~> (
-  //     (varName, maybeTypeExpr) => SingleStructField(varName, maybeTypeExpr))
-  // }
-
-  // def ParseStructBody: Rule1[StructFields] = rule {
-  //   "(" ~ zeroOrMore(ParseStructField).separatedBy(",")  ~ ")" ~> (
-  //     (fields: Seq[SingleStructField]) => StructFields(fields.map {
-  //       case SingleStructField(id, constraint) => (id -> constraint)
-  //     }.toMap))
-  // }
 
   def ParseAlternationIdentifier: Rule1[AlternationCaseName] = rule {
     capture((CharPredicate.LowerAlpha | anyOf("-")) ~ ParseRestOfIdentifier) ~ WhiteSpace ~> (
@@ -893,20 +822,14 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ))
   }
   def _ParseStructFieldDecl: Rule1[NamedStructFieldDecl] = rule {
-    "\\" ~ ParseNamedLocalValueVar ~ _ParseFieldWithTypeAssertion.? ~> (
-      (localVar: LocalValueVar, te: Option[TypeExpression]) =>
-        NamedStructFieldDecl(localVar, te.getOrElse(TypePlaceholder))
-    )
+    "\\" ~ _ParseReducedStructFieldDecl
   }
   def _ParseInlineFieldType: Rule1[TypeExpression] = rule {
     ("[" ~ ParseTypeExpression ~ "]"
      | "<-" ~ ParseTypeExpression)
   }
   def _ParseInlineFieldDecl: Rule1[NamedStructFieldDecl] = rule {
-    "\\" ~ ParseNamedLocalValueVar ~ optional(_ParseInlineFieldType) ~> (
-      (localVar: LocalValueVar, te: Option[TypeExpression]) =>
-        NamedStructFieldDecl(localVar, te.getOrElse(TypePlaceholder))
-    )
+    "\\" ~ _ParseReducedInlineFieldDecl
   }
   def ParseStructDecl: Rule1[StructLiteralType] = rule {
     (((_ParseInlineFieldDecl) ~> (
@@ -936,7 +859,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def ParseAlternationCase: Rule1[AlternationCase] = rule {
     "\\+" ~ ParseAlternationIdentifier ~ ParseStructDecl.? ~> (
       (caseName: AlternationCaseName, innerFields: Option[StructLiteralType]) =>
-        AlternationCase(caseName, innerFields.getOrElse(EmptyStructType))
+      AlternationCase(caseName, innerFields.getOrElse(EmptyStructType))
     )
   }
   def ParseEnumDecl: Rule1[TypeAlternation] = rule {
@@ -958,61 +881,6 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       (slt: StructLiteralType, te: TypeExpression) => MethodType(slt, te)
     )
   }
-
-  // def ParseNamedTypePack: Rule1[NamedTypePack] = rule {
-  //   (("(" ~ oneOrMore() ")"))
-  // }
-
-  // def ParseTypeParameterPack: Rule1[TypePackExpression] = rule {
-  //   ParseNamedTypePack
-  // }
-
-  // def ParseEnumBody: Rule1[EnumCases] = rule {
-  //   "(" ~ oneOrMore(ParseEnumCase).separatedBy(",") ~ ")" ~> (
-  //     (cases: Seq[SingleEnumCase]) => EnumCases(cases.map {
-  //       case SingleEnumCase(id, fields) => (id -> fields)
-  //     }.toMap))
-  // }
-
-  // def ParseValueParameterCreation: Rule1[SingleValueParameterEvaluation] = rule {
-  //   ParseVariablePlaceName ~ ("<-" ~ ParseTypeExpression).? ~> (
-  //     (varPlace, maybeTypeExpr) => SingleValueParameterEvaluation(varPlace, maybeTypeExpr)
-  //   )
-  // }
-
-  // def AssociatedValueParameter: Rule1[SingleValueParameterEvaluation] = rule {
-  //   (("(" ~ ParseValueParameterCreation ~ ")") ~> ((param: SingleValueParameterEvaluation) => param)
-  //   | ParseValueParameterCreation ~> ((param: SingleValueParameterEvaluation) => param))
-  // }
-
-  // def ParseAnonymousMethod: Rule1[AnonymousMethodDefinition] = rule {
-  //   oneOrMore(AssociatedValueParameter ~ "=>") ~ ParseValueExpression ~> (
-  //     (params: Seq[SingleValueParameterEvaluation], expr: ValueExpression) => AnonymousMethodDefinition(
-  //       vpp = ValueParameterPack(mapping = params.map {
-  //         case SingleValueParameterEvaluation(vp, constraint) => (vp -> constraint)
-  //       }.toMap),
-  //       expr = expr))
-  // }
-
-  // def HandlePrecedingTypeParameterDecl = rule {
-  //   zeroOrMore(HandleTypeParameter) ~> (places => TypeParameterPack(
-  //     mapping = places.map {
-  //       case TypePlace(ty, constraint) => (ty -> constraint)
-  //     }.toMap
-  //   ))
-  // }
-
-  // def ParseAnonymousMethodDefinition: Rule1[AnonymousMethodDefinition] = rule {
-  //   zeroOrMore("(" ~ ParseValueParameterCreation ~ ")" ~ "=>") ~ ParseValueExpression ~> (
-  //     (params: Seq[SingleValueParameterEvaluation], expr: ValueExpression) => AnonymousMethodDefinition(
-  //       vpp = ValueParameterPack(
-  //         params.map {
-  //           case SingleValueParameterEvaluation(vp, constraint) => (vp -> constraint)
-  //         }.toMap,
-  //       ),
-  //       expr = expr)
-  //   )
-  // }
 
   def WhiteSpace: Rule0 = rule { zeroOrMore(anyOf(" \n\r\t\f")) }
   // See https://github.com/cosmicexplorer/parboiled2#handling-whitespace for recommendations on
