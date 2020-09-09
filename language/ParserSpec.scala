@@ -60,22 +60,27 @@ class ParserSpec extends FreeSpec with Matchers {
           GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "X"))),
           GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Y"))),
         ))
-        parse("$list <= (\\+empty, \\+cons(\\.car <- $Element, \\.cdr <- $Self))") should be (ValueAssignment(
+        parse("$list[\\.El] <= (\\+empty, \\+cons(\\.car <- .El, \\.cdr <- .Self))") should be (ValueAssignment(
           GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "list"))),
-          ValueAlternation(Map(
-            AlternationCaseName("empty") -> EmptyStructType,
-            AlternationCaseName("cons") -> StructLiteralType(Map(
-              NamedIdentifier(ValueKind, "car") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Element"))),
-              NamedIdentifier(ValueKind, "cdr") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Self"))),
+          AnonymousMethod(
+            params = StructLiteralValue(),
+            output = ValueAlternation(Map(
+              AlternationCaseName("empty") -> EmptyStructType,
+              AlternationCaseName("cons") -> StructLiteralType(Map(
+                NamedIdentifier(ValueKind, "car") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "El")))),
+                NamedIdentifier(ValueKind, "cdr") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "Self")))),
+              )))),
+            typeParams = TypeParamsBound(Map(
+              NamedIdentifier(TypeKind, "El") -> TypePlaceholder,
             ))
-          ))
+          )
+
         ))
         parse("$X <- <(.x[$Integer])>") should be (TypeAssignment(
           GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "X"))),
           StructLiteralType(Map(
             NamedIdentifier(ValueKind, "x") -> GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer")))
-          ))
-        ))
+          ))))
       }
 
       "should be able to define functions with a variable assignment" in {
@@ -163,11 +168,127 @@ class ParserSpec extends FreeSpec with Matchers {
         ))
       }
 
+      // TODO: figure out a syntax for this that isn't the *EXACT* same as the one for type and/or
+      // value function calls!!
+      "should allow inline type and/or value assertions" in {
+        parse("3 <= 3[$Integer]") should be (ValueAssertion(
+          IntegerLiteral(3),
+          InlineTypeAssertionForValue(IntegerLiteral(3), GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer"))))
+        ))
+        parse("$x <= 3(3)") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
+          InlineValueAssertion(IntegerLiteral(3), IntegerLiteral(3)),
+        ))
+        parse("$X <= $Integer[$Y]") should be (TypeAssignment(
+          GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "X"))),
+          InlineTypeAssertionForType(
+            GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Integer"))),
+            GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "Y")))
+          )
+        ))
+        parse("$x <= 3(3)[<3>]") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "x"))),
+          InlineTypeAssertionForValue(
+            InlineValueAssertion(IntegerLiteral(3), IntegerLiteral(3)),
+            IntegerTypeLiteral,
+          )
+        ))
+      }
+
       // TODO: implement implicit conversions!!!
       "should be able to register and declare implicit conversions with ~>" in {
         // parse("$x <~ 3[$Integer]") should be
         // parse("$f <~ \\.x[$String] => $string-length")
         // parse("")
+      }
+    }
+
+    "when intermixing type and value parameter packs" - {
+      "should correctly handle type parameter packs in sequence" in {
+        parse("$f <= \\.T -> \\.x[.T] => .x") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "T")))),
+            )),
+            // TODO: is this what we want when returning a bare `.x`?
+            LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+            // NamedValuePack(Map(
+            //   NamedIdentifier(ValueKind, "x") -> LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+            // )),
+            TypeParamsBound(Map(
+              NamedIdentifier(TypeKind, "T") -> TypePlaceholder,
+            )),
+          )
+        ))
+        parse("$f[\\.T](\\.x[.T]) <= $plus(.x, 3)") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "T")))),
+            )),
+            FunctionCall(
+              GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "plus"))),
+               PositionalParameterPack(ValueKind, Seq(
+                LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))),
+                IntegerLiteral(3),
+              ))
+            ),
+            TypeParamsBound(Map(
+              NamedIdentifier(TypeKind, "T") -> TypePlaceholder,
+            )),
+          )
+        ))
+        parse("$f(\\.x[\\.T]) <= 4") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "T")))),
+            ),
+              NamedParameterPack(TypeKind, Map(
+                NamedIdentifier(TypeKind, "T") -> TypePlaceholder,
+              )),
+              TypeParamsDecl(Map(NamedIdentifier(TypeKind, "T") -> TypePlaceholder))),
+            IntegerLiteral(4))))
+        parse("$f[\\.T] <= \\.x[.T]") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(),
+            AnonymousMethod(
+              StructLiteralValue(Map(
+                NamedIdentifier(ValueKind, "x") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "T")))),
+              )),
+              // TODO: is this what we want when returning a bare `.x`? I think so!!!
+              NamedValuePack(Map(NamedIdentifier(ValueKind, "x") -> LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x"))))))),
+            TypeParamsBound(Map(
+              NamedIdentifier(TypeKind, "T") -> TypePlaceholder,
+            ))
+          )
+        ))
+        parse("$f <= \\.x[\\.T]") should be (ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier(ValueKind, "f"))),
+          AnonymousMethod(
+            StructLiteralValue(Map(
+              NamedIdentifier(ValueKind, "x") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "T")))),
+            ),
+              NamedParameterPack(TypeKind, Map(NamedIdentifier(TypeKind, "T") -> TypePlaceholder)),
+              TypeParamsDecl(Map(NamedIdentifier(TypeKind, "T") -> TypePlaceholder)),
+            ),
+            NamedValuePack(Map(NamedIdentifier(ValueKind, "x") -> LocalValueVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(ValueKind, "x")))))))))
+        parse("<$f> <- \\.T -> $F[.T]") should be (TypeAssertion(
+          TypePlaceholder,
+          AnonymousTypeMethod(
+            TypeParamsBound(Map(
+              NamedIdentifier(TypeKind, "T") -> TypePlaceholder,
+            )),
+            TypeFunctionCall(
+              GlobalTypeVar(GlobalVar(NamedIdentifier(TypeKind, "F"))),
+              NamedParameterPack(TypeKind, Map(
+                NamedIdentifier(TypeKind, "T") -> LocalTypeVar(LocalVar(LocalNamedIdentifier(NamedIdentifier(TypeKind, "T")))),
+              ))
+            ),
+          )
+        ))
       }
     }
 
