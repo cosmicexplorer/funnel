@@ -827,8 +827,8 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParsePositionalValueParameterPack
   }
 
-  def ParseTypeParameterPack: Rule1[TypePack] = rule {
-    ParseNamedTypePack | ParsePositionalTypeParameterPack
+  def ParseTypePack: Rule1[TypePack] = rule {
+    ParseNamedTypePack | ParsePositionalTypePack
   }
 
   def ParseFunctionSource: Rule1[ValueExpression] = rule {
@@ -936,17 +936,17 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def ParseTypeFunctionCall: Rule1[TypeTypeFunctionCall] = rule {
-    ((ParseGlobalTypeVar ~ ParseTypeParameterPack) ~> (
+    ((ParseGlobalTypeVar ~ ParseTypePack) ~> (
       (gv: GlobalTypeVar, tpe: TypePack) => TypeTypeFunctionCall(gv, tpe.bidiTypePack.parameterPack)
     ))
   }
 
   def ParseAppliedTypeParams: Rule1[TypeTypeFunctionCall] = rule {
-    ParseTypeParamsKeepingAfter ~ "->" ~ ParseTypeExpression ~>
+    (ParseTypeParamsKeepingAfter ~ "->" ~ ParseTypeExpression ~>
       ((atm: AnonymousTypeMethod, te: TypeExpression) => TypeTypeFunctionCall(
       source = te,
       arguments = NamedParameterPack(atm.typeFunctionParams.declaration.intoFullPack().mapping),
-    ))
+      )))
   }
 
   def _ParseUnparenthesizedType: Rule1[TypeExpression] = rule {
@@ -975,6 +975,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   def ParseTypeExpression: Rule1[TypeExpression] = rule {
     _ParseNonPackedTypeExpression |
+    // ParseAppliedTypeParams ~> ((ttfc: TypeTypeFunctionCall) => TypePackWorkaround(ttfc)) |
     ParseTypeParamsCreate |
     (("[" ~ _ParseNonPackedTypeExpression ~ "]") ~> ((ty: TypeExpression) => ty)
      | _ParseBaseTypeExpression ~> ((ty: TypeExpression) => ty))
@@ -1087,15 +1088,10 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def ParseTypeParamsKeepingAfter: Rule1[AnonymousTypeMethod] = rule {
-    ((ParseTypeParamsCreate ~ "->" ~ ParseTypeParameterPack ~> (
+    ((ParseTypeParamsCreate ~ "->" ~ ParseTypePack ~> (
       (tpc: NamedTypeParamPack, tp: TypePack) => AnonymousTypeMethod(
         output = tp, typeFunctionParams = ParamsDeclaration(NamedParameterPack(tpc.unfulfilled)))
-    ))
-      | ((ParseTypeParamsCreate ~> (
-        (tpc: NamedTypeParamPack) => AnonymousTypeMethod(
-          output = NamedTypePack(tpc.bidiTypePack.parameterPack.intoLazyPack().intoFullPack().mapping),
-          typeFunctionParams = tpc.bidiTypePack.functionParams)
-    ))))
+    )))
   }
 
   def ParseAlternationCase: Rule1[AlternationCase] = rule {
@@ -1119,7 +1115,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     )
   }
 
-  def ParsePositionalTypeParameterPack: Rule1[PositionalTypePack] = rule {
+  def ParsePositionalTypePack: Rule1[PositionalTypePack] = rule {
     "[" ~ oneOrMore(ParseTypeExpression).separatedBy(",") ~ "]" ~> (
       (types: Seq[TypeExpression]) => PositionalTypePack(types)
     )

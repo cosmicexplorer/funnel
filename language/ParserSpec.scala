@@ -289,7 +289,7 @@ class ParserSpec extends FreeSpec with Matchers {
               NamedIdentifier[ValueKind.type]("x") -> LocalTypeVar(LocalVar[TypeKind.type](LocalNamedIdentifier[TypeKind.type](NamedIdentifier[TypeKind.type]("T")))),
             ))),
             typeFunctionParams = ParamsDeclaration(NamedParameterPack(Map(NamedIdentifier[TypeKind.type]("T") -> TypePlaceholder)))))))
-        parse("<$f> <- \\.T -> $F[.T]") should be (Seq(TypeAssertion(
+        parse("<$f> <!- \\.T -> $F[.T]") should be (Seq(TypeAssertion(
           TypePlaceholder,
           TypePackWorkaround(AnonymousTypeMethod(
             output = TypeTypeFunctionCall(
