@@ -798,19 +798,21 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     )
   }
 
-  def _ParseValueWithTypeAssertion: Rule1[ValueWithTypeAssertion] = rule {
-    ((optional("<=") ~ "(" ~ ParseValueExpression ~ ")" ~ optional("<-") ~ "[" ~ ParseTypeExpression ~ "]") ~> (
-      (ve: ValueExpression, te: TypeExpression) => ValueWithTypeAssertion(Some(ve), Some(te)))
-      | (optional("<=") ~ "(" ~ ParseValueExpression ~ ")") ~> (
-        (ve: ValueExpression) => ValueWithTypeAssertion(Some(ve), None))
-      | (optional("<-") ~ "[" ~ ParseTypeExpression ~ "]") ~> (
-        (te: TypeExpression) => ValueWithTypeAssertion(None, Some(te)))
-      | capture(MATCH) ~> ((_: String) => ValueWithTypeAssertion(None, None)))
+  def _ParseValueWithTypeAssertion: Rule1[ValueExpression] = rule {
+    (
+      // (optional("<=") ~ "(" ~ ParseValueExpression ~ ")" ~ optional("<-") ~ "[" ~ ParseTypeExpression ~ "]") ~> (
+      // (ve: ValueExpression, te: TypeExpression) => ValueWithTypeAssertion(Some(ve), Some(te))) |
+      (optional("<=") ~ "(" ~ ParseValueExpression ~ ")") ~> (
+        (ve: ValueExpression) => ve)
+      // | (optional("<-") ~ "[" ~ ParseTypeExpression ~ "]") ~> (
+      //   (te: TypeExpression) => ValueWithTypeAssertion(None, Some(te)))
+        // | capture(MATCH) ~> ((_: String) => ValueWithTypeAssertion(None, None))
+    )
   }
   def _ParseStructField: Rule1[NamedValuePack] = rule {
-    ParseNamedLocalValueVar ~ _ParseValueWithTypeAssertion ~> (
-      (localVar: LocalValueVar, valueWithType: ValueWithTypeAssertion) => NamedValuePack(Map(
-        localVar.l.namedIdentifier -> valueWithType.mergeWithValue(localVar),
+    ParseNamedLocalValueVar ~ _ParseValueWithTypeAssertion.? ~> (
+      (localVar: LocalValueVar, ve: Option[ValueExpression]) => NamedValuePack(Map(
+        localVar.l.namedIdentifier -> ve.getOrElse(localVar),
       )))
   }
   def ParseNamedValuePack: Rule1[NamedValuePack] = rule {
@@ -848,26 +850,29 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def _ParseUnparenthesizedValue: Rule1[ValueExpression] = rule {
-    ParseFunctionCall |
     ParseValueLiteral |
-      ParseGlobalValueVar |
-      _ParseStructField |
-      ParseEnumDecl
+    ParseGlobalValueVar |
+    _ParseStructField |
+    ParseEnumDecl
   }
 
   def _ParseNonPackedValueExpression: Rule1[ValueExpression] = rule {
+    ParseFunctionCall |
     ParseInlineAssertionsForValue |
+    _ParseUnparenthesizedValue |
     ParseStructDeclValueKeepingAfter |
-    _ParseUnparenthesizedValue
+    "(" ~ (ParseInlineAssertionsForValue) ~ ")"
   }
 
   def _ParseDefinitelyNotAnAssertionValue: Rule1[ValueExpression] = rule {
+    // ParseValueCurrying |
     _ParseUnparenthesizedValue |
     ("(" ~ _ParseUnparenthesizedValue ~ ")") |
     ParseValueParameterPack
   }
 
   def ParseValueExpression: Rule1[ValueExpression] = rule {
+    ParseValueCurrying |
     _ParseNonPackedValueExpression |
     ((ParseStructDecl ~> (
         (slv: NamedValueParamPack) => AnonymousMethod(
@@ -1126,9 +1131,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseNamedLocalTypeVar ~ _ParseFieldWithTypeAssertion.? ~> (
       (localVar: LocalTypeVar, tyAssertion: Option[TypeExpression]) =>
       NamedTypePack(Map(
-        localVar.l.namedIdentifier -> tyAssertion.getOrElse {
-          LocalTypeVar(LocalVar[TypeKind.type](LocalNamedIdentifier[TypeKind.type](NamedIdentifier[TypeKind.type]("T"))))
-        },
+        localVar.l.namedIdentifier -> tyAssertion.getOrElse(localVar),
       ))
     )
   }
@@ -1142,11 +1145,12 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   def _ParseEnclosedIncompleteValuePack: Rule1[IncompleteValuePack] = rule {
     "(" ~ (
-      ((oneOrMore(ParseValueExpression).separatedBy(",")) ~> (
-        (values: Seq[ValueExpression]) => PositionalValueParameterPack(values))
-        | (oneOrMore(_ParseStructField).separatedBy(",")) ~> (
-          (fields: Seq[NamedValuePack]) => NamedValuePack.merge(fields)
-        )) ~ "," ~ "..." ~> ((vpe: ValuePackExpression) => IncompleteValuePack(Seq(vpe)))
+      ((oneOrMore(_ParseStructField).separatedBy(",")) ~> (
+        (fields: Seq[NamedValuePack]) => NamedValuePack.merge(fields)
+      )
+        | (oneOrMore(ParseValueExpression).separatedBy(",")) ~> (
+          (values: Seq[ValueExpression]) => PositionalValueParameterPack(values))
+      ) ~ "," ~ "..." ~> ((vpe: ValuePackExpression) => IncompleteValuePack(Seq(vpe)))
     ) ~ ")"
   }
   def _ParseInlineIncompleteValuePack: Rule1[IncompleteValuePack] = rule {
@@ -1160,10 +1164,10 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   def ParseIncompleteValuePack: Rule1[IncompleteValuePack] = rule {
     ((_ParseBasicIncompleteValuePack ~ "=>" ~ _ParseBasicIncompleteValuePack ~> (
-      (source: IncompleteValuePack, dest: IncompleteValuePack) =>
+      (dest: IncompleteValuePack, source: IncompleteValuePack) =>
       source.extendIncompletePacks(dest)))
       | (_ParseBasicIncompleteValuePack ~ "<=" ~ _ParseBasicIncompleteValuePack ~> (
-        (dest: IncompleteValuePack, source: IncompleteValuePack) =>
+        (source: IncompleteValuePack, dest: IncompleteValuePack) =>
         source.extendIncompletePacks(dest)))
     )
   }
@@ -1178,18 +1182,23 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       ))) ~> ((ivp: IncompleteValuePack) => ivp.intoNamedValuePack)
   }
 
+  def ParseCompletedOrStillIncompleteValuePack: Rule1[NamedValuePack] = rule {
+    (ParseCompletedValuePack
+    | (ParseIncompleteValuePack ~> ((ivp: IncompleteValuePack) => ivp.intoNamedValuePack)))
+  }
+
   def _ParseMaybeParenthesizedNonPackedValueExpression: Rule1[ValueExpression] = rule {
-    (("(" ~ _ParseNonPackedValueExpression ~ ")")
-      | _ParseNonPackedValueExpression)
+    (_ParseNonPackedValueExpression
+      | ("(" ~ _ParseNonPackedValueExpression ~ ")"))
   }
   def ParseValueCurrying: Rule1[CurriedFunctionCall] = rule {
-    ((ParseIncompleteValuePack ~ "=>" ~ _ParseMaybeParenthesizedNonPackedValueExpression ~> (
-      (ivp: IncompleteValuePack, ve: ValueExpression) =>
-      CurriedFunctionCall(ve, ivp.intoNamedValuePack)
-    ))
-      | (_ParseMaybeParenthesizedNonPackedValueExpression ~ "<=" ~ ParseIncompleteValuePack) ~> (
-        (ve: ValueExpression, ivp: IncompleteValuePack) =>
-      CurriedFunctionCall(ve, ivp.intoNamedValuePack)))
+    ((_ParseMaybeParenthesizedNonPackedValueExpression ~ "<=" ~ ParseCompletedOrStillIncompleteValuePack) ~> (
+        (ve: ValueExpression, nvp: NamedValuePack) =>
+      CurriedFunctionCall(ve, nvp))
+      | (ParseCompletedOrStillIncompleteValuePack ~ "=>" ~ _ParseMaybeParenthesizedNonPackedValueExpression ~> (
+      (nvp: NamedValuePack, ve: ValueExpression) =>
+      CurriedFunctionCall(ve, nvp)
+    )))
   }
 
   def NewLine: Rule0 = rule { oneOrMore("\n") }

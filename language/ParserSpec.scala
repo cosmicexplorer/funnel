@@ -47,17 +47,11 @@ class ParserSpec extends FreeSpec with Matchers {
             FloatLiteral(0.0),
           )),
         )))
-        parse("$point <= (.x(2)[$Integer], .y <= (3))") should be (Seq(ValueAssignment(
+        parse("$point <= (.x(2 <!- [$Integer]), .y <= (3))") should be (Seq(ValueAssignment(
           GlobalValueVar(GlobalVar(NamedIdentifier[ValueKind.type]("point"))),
           NamedValuePack(Map(
-            NamedIdentifier[ValueKind.type]("x") -> InlineTypeAssertionForValue(
-              InlineValueAssertion(
-                LocalValueVar(LocalVar[ValueKind.type](LocalNamedIdentifier[ValueKind.type](NamedIdentifier[ValueKind.type]("x")))),
-                IntegerLiteral(2)),
-              GlobalTypeVar(GlobalVar[TypeKind.type](NamedIdentifier[TypeKind.type]("Integer")))),
-            NamedIdentifier[ValueKind.type]("y") -> InlineValueAssertion(
-              LocalValueVar(LocalVar[ValueKind.type](LocalNamedIdentifier[ValueKind.type](NamedIdentifier[ValueKind.type]("y")))),
-              IntegerLiteral(3)),
+            NamedIdentifier[ValueKind.type]("x") -> InlineTypeAssertionForValue(IntegerLiteral(2), GlobalTypeVar(GlobalVar[TypeKind.type](NamedIdentifier[TypeKind.type]("Integer")))),
+            NamedIdentifier[ValueKind.type]("y") -> IntegerLiteral(3),
           ))
         )))
         parse("$X <- $Y") should be (Seq(TypeAssignment(
@@ -306,7 +300,21 @@ class ParserSpec extends FreeSpec with Matchers {
       }
     }
 
-    // TODO: make type parameter packs work!!!
+    // TODO: make curried arguments work!!!
+    "when using spread (...) operators" - {
+      "should allow currying across multiple consecutive parameter packs" in {
+        parse("$x <= $f <= (.x(3),...) <= (.y(3),...)") should be (Seq(ValueAssignment(
+          GlobalValueVar(GlobalVar(NamedIdentifier[ValueKind.type]("x"))),
+          CurriedFunctionCall(
+            source = GlobalValueVar(GlobalVar(NamedIdentifier[ValueKind.type]("f"))),
+            arguments = NamedValuePack(Map(
+              NamedIdentifier[ValueKind.type]("x") -> IntegerLiteral(3),
+              NamedIdentifier[ValueKind.type]("y") -> IntegerLiteral(3),
+            )),
+          )
+        )))
+      }
+    }
 
     // TODO: implement the +{} parser syntax!!!
   }
