@@ -828,7 +828,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   def ParseTypePack: Rule1[TypePack] = rule {
-    ParseNamedTypePack | ParsePositionalTypePack
+    ParseNamedTypePack | ParsePositionalTypePack | ParseTypeFunctionCall | ParseAppliedTypeParams
   }
 
   def ParseFunctionSource: Rule1[ValueExpression] = rule {
@@ -969,16 +969,16 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   def _ParseBaseTypeExpression: Rule1[TypeExpression] = rule {
     // TODO: this is a workaround!!!
+    ParseTypeParamsKeepingAfter ~> ((tp: TypePack) => TypePackWorkaround(tp)) |
     ParseTypeFunctionCall ~> ((tp: TypePack) => TypePackWorkaround(tp)) |
-    ParseAppliedTypeParams ~> ((tp: TypePack) => TypePackWorkaround(tp)) |
-    _ParseNonPackedTypeExpression
+    ParseAppliedTypeParams ~> ((tp: TypePack) => TypePackWorkaround(tp))
   }
   def ParseTypeExpression: Rule1[TypeExpression] = rule {
+    (_ParseBaseTypeExpression ~> ((ty: TypeExpression) => ty) |
     _ParseNonPackedTypeExpression |
     // ParseAppliedTypeParams ~> ((ttfc: TypeTypeFunctionCall) => TypePackWorkaround(ttfc)) |
     ParseTypeParamsCreate |
-    (("[" ~ _ParseNonPackedTypeExpression ~ "]") ~> ((ty: TypeExpression) => ty)
-     | _ParseBaseTypeExpression ~> ((ty: TypeExpression) => ty))
+    (("[" ~ _ParseNonPackedTypeExpression ~ "]") ~> ((ty: TypeExpression) => ty)))
   }
 
   def ParseAlternationIdentifier: Rule1[AlternationCaseName] = rule {
@@ -1090,7 +1090,8 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def ParseTypeParamsKeepingAfter: Rule1[AnonymousTypeMethod] = rule {
     ((ParseTypeParamsCreate ~ "->" ~ ParseTypePack ~> (
       (tpc: NamedTypeParamPack, tp: TypePack) => AnonymousTypeMethod(
-        output = tp, typeFunctionParams = ParamsDeclaration(NamedParameterPack(tpc.unfulfilled)))
+        output = tp,
+        typeFunctionParams = ParamsDeclaration(NamedParameterPack(tpc.unfulfilled)))
     )))
   }
 
@@ -1125,7 +1126,9 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseNamedLocalTypeVar ~ _ParseFieldWithTypeAssertion.? ~> (
       (localVar: LocalTypeVar, tyAssertion: Option[TypeExpression]) =>
       NamedTypePack(Map(
-        localVar.l.namedIdentifier -> tyAssertion.getOrElse(TypePlaceholder),
+        localVar.l.namedIdentifier -> tyAssertion.getOrElse {
+          LocalTypeVar(LocalVar[TypeKind.type](LocalNamedIdentifier[TypeKind.type](NamedIdentifier[TypeKind.type]("T"))))
+        },
       ))
     )
   }
