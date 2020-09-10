@@ -12,6 +12,7 @@ import scala.util.matching.Regex
 
 object Errors {
   import NonNodeData._
+  import FunnelPEG._
 
   sealed abstract class FunnelParseError(message: String) extends Exception(message)
 
@@ -41,6 +42,12 @@ object Errors {
 
   case class ExceptionHandlingError(message: String)
       extends InternalError("while handling an exception", message)
+
+  case class PullOutNewTypeParamsError(
+    parent: AstNode, typeParams: TypeParamPack, message: String,
+  ) extends InternalError(
+    s"while trying to pull out type params $typeParams from parent $parent",
+    message)
 }
 
 
@@ -206,16 +213,25 @@ object NonNodeData {
   case object Left extends ParameterPushLocationKinds
   case object Right extends ParameterPushLocationKinds
 
-  trait SidewaysMergeable[T] {
-    def merge(fromLocation: ParameterPushLocationKinds, other: T): T
+  trait SidewaysMergeable[Rhs, Result] {
+    def merge(fromLocation: ParameterPushLocationKinds, other: Rhs): Result
   }
+
+  trait SelfSidewaysMergeable[T] extends SidewaysMergeable[T, T]
 
   // This class is used to allow coalescing arguments which may be provided by name OR by position,
   // e.g.:
   // $f(2, 3, .x(4), 5)
+  object LazyParameterPack {
+    def empty[K <: ExpressionKinds, V <: ExpressionKinds]: LazyParameterPack[K, V] =
+      LazyParameterPack[K, V](Seq())
+  }
   case class LazyParameterPack[K <: ExpressionKinds, V <: ExpressionKinds](
     exprs: Seq[(Option[NamedIdentifier[K]], Expression[V])],
-  ) extends SidewaysMergeable[LazyParameterPack[K, V]] {
+  ) extends SelfSidewaysMergeable[LazyParameterPack[K, V]] {
+    def size: Int = exprs.size
+    def headIdent: Option[NamedIdentifier[K]] = exprs.head._1
+
     override def merge(
       fromLocation: ParameterPushLocationKinds,
       other: LazyParameterPack[K, V],
@@ -248,6 +264,7 @@ object NonNodeData {
 
 // Define AST entities.
 object FunnelPEG {
+  import Errors._
   import NonNodeData._
 
   sealed abstract class AstNode
@@ -274,7 +291,7 @@ object FunnelPEG {
   }
   case class ParamsDeclaration[Kind <: ExpressionKinds](
     declaration: LazyParameterPack[Kind, TypeKind.type]
-  ) extends SidewaysMergeable[ParamsDeclaration[Kind]] {
+  ) extends SelfSidewaysMergeable[ParamsDeclaration[Kind]] {
     override def merge(
       fromLocation: ParameterPushLocationKinds,
       other: ParamsDeclaration[Kind],
@@ -373,16 +390,20 @@ object FunnelPEG {
     }))
   }
 
-  case class FunctionCall(
-    source: ValueExpression,
-    arguments: ParameterPackKinds[ValueKind.type, ValueKind.type],
-  )
-      extends ValueExpression {
+  sealed abstract class FunctionCallLike extends ValueExpression {
     override def bidiPack = super.bidiPack.copy(
       parameterPack = StandaloneParameter(ValueKind, this)
     )
     override def extractType: TypeExpression = TypePlaceholder
   }
+  case class FunctionCall(
+    source: ValueExpression,
+    arguments: ParameterPackKinds[ValueKind.type, ValueKind.type],
+  ) extends FunctionCallLike
+  case class CurriedFunctionCall(
+    source: ValueExpression,
+    arguments: NamedValuePack,
+  ) extends FunctionCallLike
 
   // TODO!!!
   // case class TypeValueFunctionCall(
@@ -557,6 +578,46 @@ object FunnelPEG {
       functionParams = functionParams,
       typeFunctionParams = typeFunctionParams,
     )
+
+    def pullOutAnyNewTypeParams: AnonymousMethod = {
+      // throw new Exception(toString)
+      val (modifiedFunctionParams, newTypeFunctionParams): (LazyParameterPack[ValueKind.type, TypeKind.type], LazyParameterPack[TypeKind.type, TypeKind.type]) =
+        bidiPack.functionParams.declaration.exprs
+          .zipWithIndex
+          .foldLeft(LazyParameterPack.empty[ValueKind.type, TypeKind.type] -> typeParams.declaration) {
+            (acc, cur) => (acc -> cur) match {
+              case ((modifiedFunctionParams, newTypeFunctionParams), ((maybeNamedId, expr), index)) => try {
+                val typeParamPack = expr.asInstanceOf[TypeParamPack]
+                val lazyTypeParams: LazyParameterPack[TypeKind.type, TypeKind.type] =
+                  typeParamPack.typeParams.declaration
+                if (lazyTypeParams.size != 1) {
+                  throw PullOutNewTypeParamsError(
+                    this, typeParamPack, "expected type param pack to only have a single entry!")
+                } else {
+                  val namedId = lazyTypeParams.headIdent.getOrElse {
+                    OneIndexedPosition[TypeKind.type](index + 1).intoIdentifier
+                  }
+                  (
+                    modifiedFunctionParams.merge(Right, LazyParameterPack(Seq(
+                      maybeNamedId -> LocalTypeVar(LocalVar[TypeKind.type](
+                        LocalNamedIdentifier[TypeKind.type](namedId)))
+                    ))),
+                    newTypeFunctionParams.merge(Right, lazyTypeParams)
+                  )
+                }
+              } catch {
+                case e: ClassCastException => (
+                  modifiedFunctionParams.merge(Right, LazyParameterPack(Seq(
+                    maybeNamedId -> expr))),
+                  newTypeFunctionParams,
+                )
+              }
+            }}
+      copy(
+        functionParams = ParamsDeclaration(modifiedFunctionParams),
+        typeFunctionParams = ParamsDeclaration(newTypeFunctionParams),
+      )
+    }
   }
 
   case class AnonymousTypeMethod(
@@ -588,29 +649,39 @@ object FunnelPEG {
     }
   }
 
-  case class InlineValueAssertion(subject: ValueExpression, constraint: ValueExpression)
-      extends ValueExpression {
+  sealed abstract class InlineAssertionForValue(subject: ValueExpression) extends ValueExpression {
     override def bidiPack = super.bidiPack.copy(
       parameterPack = subject.bidiPack.parameterPack,
     )
     override def extractType = subject.extractType
   }
+  case class InlineValueAssertion(subject: ValueExpression, constraint: ValueExpression)
+      extends InlineAssertionForValue(subject)
 
   sealed abstract class TypeStatement extends Statement[TypeKind.type]
   case class TypeAssignment(place: GlobalTypeVar, te: TypeExpression) extends TypeStatement
   case class TypeAssertion(lhs: TypeExpression, rhs: TypeExpression) extends TypeStatement
 
   case class InlineTypeAssertionForValue(subject: ValueExpression, constraint: TypeExpression)
-      extends ValueExpression {
-    override def bidiPack = super.bidiPack.copy(
-      parameterPack = subject.bidiPack.parameterPack
-    )
-    override def extractType = subject.extractType
-  }
+      extends InlineAssertionForValue(subject)
 
   case class InlineTypeAssertionForType(subject: TypeExpression, constraint: TypeExpression)
       extends TypeExpression {
     override def extractType = subject
+  }
+
+  sealed abstract class ExtendedValueCurrying extends AstNode
+  case class IncompleteValuePack(
+    innerPacks: Seq[ValuePackExpression],
+  ) extends ExtendedValueCurrying {
+    def appendIncompletePack(vpe: ValuePackExpression): IncompleteValuePack =
+      IncompleteValuePack(innerPacks :+ vpe)
+    def extendIncompletePacks(ivp: IncompleteValuePack): IncompleteValuePack =
+      IncompleteValuePack(innerPacks ++ ivp.innerPacks)
+    def intoNamedValuePack: NamedValuePack =
+      NamedValuePack(innerPacks.map(_.bidiPack.parameterPack.intoLazyPack())
+        .fold(LazyParameterPack.empty) { (lazyPack1, lazyPack2) => lazyPack2.merge(Left, lazyPack1) }
+        .intoFullPack())
   }
 }
 
@@ -619,25 +690,25 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   import FunnelPEG._
 
   // Define the parsing rules.
-  def Funnel: Rule1[Seq[BaseStatement]] = rule { WhiteSpace ~ ReplOrFile ~ EOI }
+  def Funnel: Rule1[Seq[BaseStatement]] = rule { WhiteSpace ~ ReplOrFile ~ WhiteSpace ~ EOI }
 
   def TopLevel: Rule1[BaseStatement] = rule {
     ParseValueAssignment | ParseValueAssertion | ParseTypeAssignment | ParseTypeAssertion
   }
 
   def ReplOrFile: Rule1[Seq[BaseStatement]] = rule {
-    zeroOrMore(TopLevel) ~> ((s: Seq[BaseStatement]) => s)
+    zeroOrMore(TopLevel).separatedBy(NewLine) ~> ((s: Seq[BaseStatement]) => s)
   }
 
   def ParseValueAssignment: Rule1[ValueAssignment] = rule {
-    (ParseGlobalValueVar ~ ParseTypeParamsCreateNoInline.? ~ ParseStructDeclNoInline.? ~ "<=" ~ ParseValueExpression) ~> (
+    (ParseGlobalValueVar ~ ParseTypeParamsCreateNoInline.? ~ ParseStructDeclNoInline.? ~ WhiteSpace ~ "<=" ~ ParseValueExpression) ~> (
       (v: GlobalValueVar, tpc: Option[NamedTypeParamPack], slv: Option[NamedValueParamPack],
         ve: ValueExpression) => {
         val valExpr = (tpc, slv) match {
           case (Some(tpc), Some(slv)) => AnonymousMethod(
             output = ve,
             functionParams = ParamsDeclaration(NamedParameterPack(slv.unfulfilled)),
-            typeFunctionParams = ParamsDeclaration(NamedParameterPack(tpc.unfulfilled)))
+            typeFunctionParams = ParamsDeclaration(NamedParameterPack(tpc.unfulfilled))).pullOutAnyNewTypeParams
           case (Some(tpc), None) => TypeParamsWrapperForValue(
             subject = ve,
             tpp = NamedTypeParamPack(tpc.unfulfilled),
@@ -645,17 +716,15 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
           )
           case (None, Some(slv)) => AnonymousMethod(
             output = ve,
-            functionParams = ParamsDeclaration(NamedParameterPack(slv.unfulfilled)))
+            functionParams = ParamsDeclaration(NamedParameterPack(slv.unfulfilled))).pullOutAnyNewTypeParams
           case (None, None) => ve
         }
         ValueAssignment(v, valExpr)
       }
-
     )
   }
   def ParseValueAssertion: Rule1[ValueAssertion] = rule {
-    // TODO: Why is this WhiteSpace necessary?
-    (ParseValueExpression ~ WhiteSpace ~ "<=" ~ ParseValueExpression) ~> (
+    (_ParseDefinitelyNotAnAssertionValue ~ WhiteSpace ~ "<!=" ~ ParseValueExpression) ~> (
       (lhs: ValueExpression, rhs: ValueExpression) => ValueAssertion(lhs, rhs)
     )
   }
@@ -666,7 +735,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     )
   }
   def ParseTypeAssertion: Rule1[TypeAssertion] = rule {
-    (ParseTypeExpression ~ "<-" ~ ParseTypeExpression) ~> (
+    (_ParseDefinitelyNotAnAssertionType ~ WhiteSpace ~ "<!-" ~ ParseTypeExpression) ~> (
       (lhs: TypeExpression, rhs: TypeExpression) => TypeAssertion(lhs, rhs)
     )
   }
@@ -752,39 +821,62 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     )
   }
 
-  def ParseParameterPack: Rule1[ValuePackExpression] = rule {
+  def ParseValueParameterPack: Rule1[ValuePackExpression] = rule {
     ParseEmptyStruct |
-    ParsePositionalValueParameterPack |
-    ParseNamedValuePack
+    ParseNamedValuePack |
+    ParsePositionalValueParameterPack
   }
 
   def ParseTypeParameterPack: Rule1[TypePack] = rule {
-    ParsePositionalTypeParameterPack | ParseNamedTypePack
+    ParseNamedTypePack | ParsePositionalTypeParameterPack
+  }
+
+  def ParseFunctionSource: Rule1[ValueExpression] = rule {
+    ("(" ~ (ParseValueCurrying | ParseInlineAssertionsForValue) ~ ")") |
+    ParseStructDeclValueKeepingAfter |
+    ParseGlobalValueVar |
+    ParseNamedLocalValueVar |
+    ParseValueLiteral
   }
 
   def ParseFunctionCall: Rule1[FunctionCall] = rule {
     // FIXME: this should really be using something more like the "chained" value expressions, but
     // those don't work yet. Right now it only works when using a global function as the source.
-    ((ParseGlobalValueVar ~ "<=".? ~ ParseParameterPack) ~> (
-      (gv: GlobalValueVar, vpe: ValuePackExpression) => FunctionCall(gv, vpe.bidiPack.parameterPack)
+    ((ParseFunctionSource ~ "<=".? ~ ParseValueParameterPack) ~> (
+      (ve: ValueExpression, vpe: ValuePackExpression) => FunctionCall(ve, vpe.bidiPack.parameterPack)
     ))
   }
 
-  def _ParseBaseValueExpression: Rule1[ValueExpression] = rule {
+  def _ParseUnparenthesizedValue: Rule1[ValueExpression] = rule {
     ParseFunctionCall |
-    ParseStructDeclValueKeepingAfter |
-    ParseGlobalValueVar |
-    ParseNamedLocalValueVar |
     ParseValueLiteral |
-    ParseEnumDecl |
-    ParseEmptyStruct |
-    ParsePositionalValueParameterPack |
-    ParseNamedValuePack |
-    ParseStructDecl
+      ParseGlobalValueVar |
+      _ParseStructField |
+      ParseEnumDecl
   }
+
+  def _ParseNonPackedValueExpression: Rule1[ValueExpression] = rule {
+    ParseInlineAssertionsForValue |
+    ParseStructDeclValueKeepingAfter |
+    _ParseUnparenthesizedValue
+  }
+
+  def _ParseDefinitelyNotAnAssertionValue: Rule1[ValueExpression] = rule {
+    _ParseUnparenthesizedValue |
+    ("(" ~ _ParseUnparenthesizedValue ~ ")") |
+    ParseValueParameterPack
+  }
+
   def ParseValueExpression: Rule1[ValueExpression] = rule {
-    (("(" ~ ParseValueExpression ~ ")") ~> ((value: ValueExpression) => value)
-    | _ParseBaseValueExpression ~> ((value: ValueExpression) => value))
+    _ParseNonPackedValueExpression |
+    ((ParseStructDecl ~> (
+        (slv: NamedValueParamPack) => AnonymousMethod(
+          output = NamedValuePack(slv.bidiPack.parameterPack.intoLazyPack().intoFullPack()),
+          functionParams = slv.bidiPack.functionParams,
+        ).pullOutAnyNewTypeParams
+    ))) |
+    ("(" ~ _ParseNonPackedValueExpression ~ ")") |
+    ParseValueParameterPack
   }
 
   def ParseTypeTerm: Rule1[TypeTerm] = rule {
@@ -840,7 +932,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   // This implements the "type extraction operator" <...>.
   def _ParseTypeExtractableExpressions: Rule1[TypeExpression] = rule {
-    "<" ~ _KnownTypeExtractableExpressions ~ ">"
+    "<" ~ _KnownTypeExtractableExpressions ~ str(">")
   }
 
   def ParseTypeFunctionCall: Rule1[TypeTypeFunctionCall] = rule {
@@ -857,16 +949,34 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ))
   }
 
+  def _ParseUnparenthesizedType: Rule1[TypeExpression] = rule {
+    ParseTypeTerm |
+    _ParseTypeExtractableExpressions
+  }
+
+  def _ParseNonPackedTypeExpression: Rule1[TypeExpression] = rule {
+    ParseInlineTypeAssertionForType |
+    ParseAnonymousMethodSignature |
+    _ParseUnparenthesizedType
+  }
+
+  def _ParseDefinitelyNotAnAssertionType: Rule1[TypeExpression] = rule {
+    _ParseUnparenthesizedType |
+    // TODO: this is a workaround!!!
+    ParseTypeFunctionCall ~> ((tp: TypePack) => TypePackWorkaround(tp)) |
+    ParseAppliedTypeParams ~> ((tp: TypePack) => TypePackWorkaround(tp))
+  }
+
   def _ParseBaseTypeExpression: Rule1[TypeExpression] = rule {
     // TODO: this is a workaround!!!
     ParseTypeFunctionCall ~> ((tp: TypePack) => TypePackWorkaround(tp)) |
     ParseAppliedTypeParams ~> ((tp: TypePack) => TypePackWorkaround(tp)) |
-    ParseTypeTerm |
-    ParseAnonymousMethodSignature |
-    _ParseTypeExtractableExpressions
+    _ParseNonPackedTypeExpression
   }
   def ParseTypeExpression: Rule1[TypeExpression] = rule {
-    (("[" ~ _ParseBaseTypeExpression ~ "]") ~> ((ty: TypeExpression) => ty)
+    _ParseNonPackedTypeExpression |
+    ParseTypeParamsCreate |
+    (("[" ~ _ParseNonPackedTypeExpression ~ "]") ~> ((ty: TypeExpression) => ty)
      | _ParseBaseTypeExpression ~> ((ty: TypeExpression) => ty))
   }
 
@@ -888,8 +998,8 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     "\\" ~ _ParseReducedStructFieldDecl
   }
   def _ParseInlineFieldType: Rule1[TypeExpression] = rule {
-    ("[" ~ ParseTypeExpression ~ "]"
-     | "<-" ~ ParseTypeExpression)
+    (("<-".? ~ "[" ~ ParseTypeExpression ~ "]")
+     | ("<-" ~ ParseTypeExpression))
   }
   def _ParseInlineFieldDecl: Rule1[NamedValueParamPack] = rule {
     "\\" ~ _ParseReducedInlineFieldDecl
@@ -905,6 +1015,38 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       | ParseStructDeclNoInline)
   }
 
+  def ParseInlineValueAssertion: Rule1[InlineValueAssertion] = rule {
+    (_ParseDefinitelyNotAnAssertionValue ~ WhiteSpace ~ "<!=" ~ ParseValueExpression ~> (
+      (subject: ValueExpression, constraint: ValueExpression) =>
+      InlineValueAssertion(subject, constraint))
+      | _ParseDefinitelyNotAnAssertionValue ~ WhiteSpace ~ "=!>" ~ ParseValueExpression ~> (
+        (constraint: ValueExpression, subject: ValueExpression) =>
+        InlineValueAssertion(subject, constraint)
+      ))
+  }
+  def ParseInlineTypeAssertionForValue: Rule1[InlineTypeAssertionForValue] = rule {
+    (_ParseDefinitelyNotAnAssertionValue ~ WhiteSpace ~ "<!-" ~ ParseTypeExpression ~> (
+      (subject: ValueExpression, constraint: TypeExpression) =>
+      InlineTypeAssertionForValue(subject, constraint))
+      | _ParseDefinitelyNotAnAssertionType ~ WhiteSpace ~ "-!>" ~ ParseValueExpression ~> (
+        (constraint: TypeExpression, subject: ValueExpression) =>
+        InlineTypeAssertionForValue(subject, constraint)
+      ))
+  }
+  def ParseInlineAssertionsForValue: Rule1[InlineAssertionForValue] = rule {
+    ParseInlineValueAssertion | ParseInlineTypeAssertionForValue
+  }
+
+  def ParseInlineTypeAssertionForType: Rule1[InlineTypeAssertionForType] = rule {
+    (_ParseUnparenthesizedType ~ "<!-" ~ ParseTypeExpression ~> (
+      (subject: TypeExpression, constraint: TypeExpression) =>
+      InlineTypeAssertionForType(subject, constraint))
+      | _ParseUnparenthesizedType ~ "-!>" ~ ParseTypeExpression ~> (
+        (constraint: TypeExpression, subject: TypeExpression) =>
+        InlineTypeAssertionForType(subject, constraint)
+      ))
+  }
+
   // TODO: please explain what "keeping after" means here...
   def _ParseStructDeclValueHelper: Rule1[AnonymousMethod] = rule {
     ((ParseStructDecl ~ "=>" ~ ParseValueExpression ~> (
@@ -912,12 +1054,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       AnonymousMethod(
         output = ve,
         functionParams = slv.bidiPack.functionParams)
-    ))
-      | ((ParseStructDecl ~ EOI ~> (
-        (slv: NamedValueParamPack) => AnonymousMethod(
-          output = NamedValuePack(slv.bidiPack.parameterPack.intoLazyPack().intoFullPack()),
-          functionParams = slv.bidiPack.functionParams)
-      ))))
+    )))
   }
   def ParseStructDeclValueKeepingAfter: Rule1[AnonymousMethod] = rule {
     optional(ParseTypeParamsCreate ~ "->") ~ _ParseStructDeclValueHelper ~> (
@@ -954,7 +1091,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       (tpc: NamedTypeParamPack, tp: TypePack) => AnonymousTypeMethod(
         output = tp, typeFunctionParams = ParamsDeclaration(NamedParameterPack(tpc.unfulfilled)))
     ))
-      | ((ParseTypeParamsCreate ~ EOI ~> (
+      | ((ParseTypeParamsCreate ~> (
         (tpc: NamedTypeParamPack) => AnonymousTypeMethod(
           output = NamedTypePack(tpc.bidiTypePack.parameterPack.intoLazyPack().intoFullPack().mapping),
           typeFunctionParams = tpc.bidiTypePack.functionParams)
@@ -1004,6 +1141,59 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       ))
   }
 
+  def _ParseEnclosedIncompleteValuePack: Rule1[IncompleteValuePack] = rule {
+    "(" ~ (
+      ((oneOrMore(ParseValueExpression).separatedBy(",")) ~> (
+        (values: Seq[ValueExpression]) => PositionalValueParameterPack(values))
+        | (oneOrMore(_ParseStructField).separatedBy(",")) ~> (
+          (fields: Seq[NamedValuePack]) => NamedValuePack.merge(fields)
+        )) ~ "," ~ "..." ~> ((vpe: ValuePackExpression) => IncompleteValuePack(Seq(vpe)))
+    ) ~ ")"
+  }
+  def _ParseInlineIncompleteValuePack: Rule1[IncompleteValuePack] = rule {
+    ((_ParseNonPackedValueExpression ~> ((ve: ValueExpression) => StandaloneValueExpression(ve)))
+      | _ParseStructField) ~ "..." ~> (
+      (vpe: ValuePackExpression) => IncompleteValuePack(Seq(vpe))
+    )
+  }
+  def _ParseBasicIncompleteValuePack: Rule1[IncompleteValuePack] = rule {
+    _ParseEnclosedIncompleteValuePack | _ParseInlineIncompleteValuePack
+  }
+  def ParseIncompleteValuePack: Rule1[IncompleteValuePack] = rule {
+    ((_ParseBasicIncompleteValuePack ~ "=>" ~ _ParseBasicIncompleteValuePack ~> (
+      (source: IncompleteValuePack, dest: IncompleteValuePack) =>
+      source.extendIncompletePacks(dest)))
+      | (_ParseBasicIncompleteValuePack ~ "<=" ~ _ParseBasicIncompleteValuePack ~> (
+        (dest: IncompleteValuePack, source: IncompleteValuePack) =>
+        source.extendIncompletePacks(dest)))
+    )
+  }
+
+  def ParseCompletedValuePack: Rule1[NamedValuePack] = rule {
+    ((ParseIncompleteValuePack ~ "=>" ~ ParseValueParameterPack ~> (
+      (ivp: IncompleteValuePack, vpe: ValuePackExpression) =>
+      ivp.appendIncompletePack(vpe)))
+      | (ParseValueParameterPack ~ "<=" ~ ParseIncompleteValuePack ~> (
+        (vpe: ValuePackExpression, ivp: IncompleteValuePack) =>
+        ivp.appendIncompletePack(vpe)
+      ))) ~> ((ivp: IncompleteValuePack) => ivp.intoNamedValuePack)
+  }
+
+  def _ParseMaybeParenthesizedNonPackedValueExpression: Rule1[ValueExpression] = rule {
+    (("(" ~ _ParseNonPackedValueExpression ~ ")")
+      | _ParseNonPackedValueExpression)
+  }
+  def ParseValueCurrying: Rule1[CurriedFunctionCall] = rule {
+    ((ParseIncompleteValuePack ~ "=>" ~ _ParseMaybeParenthesizedNonPackedValueExpression ~> (
+      (ivp: IncompleteValuePack, ve: ValueExpression) =>
+      CurriedFunctionCall(ve, ivp.intoNamedValuePack)
+    ))
+      | (_ParseMaybeParenthesizedNonPackedValueExpression ~ "<=" ~ ParseIncompleteValuePack) ~> (
+        (ve: ValueExpression, ivp: IncompleteValuePack) =>
+      CurriedFunctionCall(ve, ivp.intoNamedValuePack)))
+  }
+
+  def NewLine: Rule0 = rule { oneOrMore("\n") }
   def WhiteSpace: Rule0 = rule { zeroOrMore(anyOf(" \n\r\t\f")) }
   // See https://github.com/cosmicexplorer/parboiled2#handling-whitespace for recommendations on
   // handling whitespace with PEG parsers (namely, by matching whitespace strictly after every
