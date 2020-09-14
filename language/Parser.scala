@@ -1311,10 +1311,20 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   // Parse groupings:
   def ParseGroupingForValue: Rule1[GroupingForValue] = rule {
-    "(" ~ ParseAllValueExpressions ~ ")" ~> ((ve: ValueComponent) => GroupingForValue(ve))
+    (("(" ~ ParseAllValueExpressions ~ ")")
+      // Trailing commas in groupings make them look like pack expressions. Explicitly fail here to
+      // avoid this ambiguity.
+      | ("(" ~ ParseAllValueExpressions ~ SpacedComma ~ ")" ~
+        fail("a comma at the end of a value grouping is invalid"))) ~> (
+      (ve: ValueComponent) => GroupingForValue(ve))
   }
   def ParseGroupingForType: Rule1[GroupingForType] = rule {
-    "[" ~ ParseAllTypeExpressions ~ "]" ~> ((te: TypeComponent) => GroupingForType(te))
+    (("[" ~ ParseAllTypeExpressions ~ "]")
+      // Trailing commas in groupings make them look like pack expressions. Explicitly fail here to
+      // avoid this ambiguity.
+      | ("[" ~ ParseAllTypeExpressions ~ SpacedComma ~ "]" ~
+        fail("a comma at the end of a type grouping is invalid"))) ~> (
+      (te: TypeComponent) => GroupingForType(te))
   }
 
   // These two rules are crucial. They define "atomic" splits of chains of value/type expressions

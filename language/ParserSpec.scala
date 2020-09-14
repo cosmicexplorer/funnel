@@ -32,8 +32,17 @@ class ParserSpec extends FreeSpec with Matchers {
     }
   }
 
-  def globalType(name: String) = GlobalTypeVar(GlobalVar(NamedIdentifier[TypeKind.type](name)))
-  def globalValue(name: String) = GlobalValueVar(GlobalVar(NamedIdentifier[ValueKind.type](name)))
+  def typeName(name: String) = NamedIdentifier[TypeKind.type](name)
+  def valName(name: String) = NamedIdentifier[ValueKind.type](name)
+
+  def globalType(name: String) = GlobalTypeVar(GlobalVar(typeName(name)))
+  def globalValue(name: String) = GlobalValueVar(GlobalVar(valName(name)))
+
+  def localType(name: String) = LocalTypeVar(LocalVar(LocalNamedIdentifier(typeName(name))))
+  def localVal(name: String) = LocalValueVar(LocalVar(LocalNamedIdentifier(valName(name))))
+
+  def typeGroup(inner: TypeComponent) = GroupingForType(inner)
+  def valGroup(inner: ValueComponent) = GroupingForValue(inner)
 
   "FunnelPEG" - {
     "when parsing non-packed expressions" - {
@@ -47,18 +56,52 @@ class ParserSpec extends FreeSpec with Matchers {
         parseTypeExpression("$G") should be (globalType("G"))
         parseValueExpression("$g") should be (globalValue("g"))
       }
+    }
+    "when parsing packed expressions" - {
       "should correctly parse positional packs" in {
         parseTypeExpression("[$F, $G]") should be (PositionalTypePackExpression(Seq(
           globalType("F"), globalType("G")
         )))
-        parseTypeExpression("[$F,]") should be (PositionalTypePackExpression(Seq(globalType("F"))))
+        parseTypeExpression("[$F,]") should be (PositionalTypePackExpression(Seq(
+          globalType("F"))))
         parseValueExpression("(2, 0.1,)") should be (PositionalValuePackExpression(Seq(
           IntegerLiteral(2), FloatLiteral(0.1),
         )))
+        parseValueExpression("(3, )") should be (PositionalValuePackExpression(Seq(
+          IntegerLiteral(3))))
       }
-    }
-    "when parsing positional packs" - {
-
+      "should correctly parse inline named packs" in {
+        parseTypeExpression(".T") should be (InlineNamedTypePack(
+          name = typeName("T"),
+          value = localType("T")))
+        parseTypeExpression(".T[$Y]") should be (InlineNamedTypePack(
+          name = typeName("T"),
+          value = typeGroup(globalType("Y")),
+        ))
+        // TODO: make this exception type better?
+        // Note that this fails, while [$Y, ] works, because that is a positional parameter
+        // pack. The intent of explicitly failing for trailing commas is to avoid any confusion
+        // about whether the grouped type/value is a parameter pack (and therefore an inline
+        // function call), vs being an inline pack expression.
+        val caughtTypeGroup = intercept[Exception] {
+          parseTypeExpression(".T[$Y,]")
+        }
+        assert(caughtTypeGroup.getMessage
+          .contains("a comma at the end of a type grouping is invalid"))
+        parseValueExpression(".x") should be (InlineNamedValuePack(
+          name = valName("x"),
+          value = localVal("x"),
+        ))
+        parseValueExpression(".x(3)") should be (InlineNamedValuePack(
+          name = valName("x"),
+          value = valGroup(IntegerLiteral(3)),
+        ))
+        val caughtValueGroup = intercept[Exception] {
+          parseValueExpression(".x(3,)")
+        }
+        assert(caughtValueGroup.getMessage
+          .contains("a comma at the end of a value grouping is invalid"))
+      }
     }
 
     // "when parsing top-level expressions" - {
