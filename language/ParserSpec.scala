@@ -1,6 +1,5 @@
 package funnel.language
 
-import Packs._
 import EntityData._
 import FunnelPEG._
 
@@ -20,6 +19,12 @@ class ParserSpec extends FreeSpec with Matchers {
     }
   }
 
+  def parseTypeExpression(input: String): TypeComponent = {
+    val parser = new FunnelPEG(input)
+    try { parser.ParseAllTypeExpressions.run().get } catch {
+      case e: ParseError => throw new Exception(e.format(parser))
+    }
+  }
   def parseValueExpression(input: String): ValueComponent = {
     val parser = new FunnelPEG(input)
     try { parser.ParseAllValueExpressions.run().get } catch {
@@ -27,11 +32,33 @@ class ParserSpec extends FreeSpec with Matchers {
     }
   }
 
+  def globalType(name: String) = GlobalTypeVar(GlobalVar(NamedIdentifier[TypeKind.type](name)))
+  def globalValue(name: String) = GlobalValueVar(GlobalVar(NamedIdentifier[ValueKind.type](name)))
+
   "FunnelPEG" - {
-    "when parsing non-packed values" - {
+    "when parsing non-packed expressions" - {
       "should correctly parse literals" in {
+        // Note: there are currently no "type literals".
         parseValueExpression("3") should be (IntegerLiteral(3))
+        parseValueExpression("\"a\"") should be (StringLiteral("a"))
+        parseValueExpression("0.1") should be (FloatLiteral(0.1))
       }
+      "should correctly parse references to global variables" in {
+        parseTypeExpression("$G") should be (globalType("G"))
+        parseValueExpression("$g") should be (globalValue("g"))
+      }
+      "should correctly parse positional packs" in {
+        parseTypeExpression("[$F, $G]") should be (PositionalTypePackExpression(Seq(
+          globalType("F"), globalType("G")
+        )))
+        parseTypeExpression("[$F,]") should be (PositionalTypePackExpression(Seq(globalType("F"))))
+        parseValueExpression("(2, 0.1,)") should be (PositionalValuePackExpression(Seq(
+          IntegerLiteral(2), FloatLiteral(0.1),
+        )))
+      }
+    }
+    "when parsing positional packs" - {
+
     }
 
     // "when parsing top-level expressions" - {

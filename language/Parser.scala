@@ -831,7 +831,8 @@ object FunnelPEG {
 
   sealed abstract class NonPackedExpression extends Expression
   sealed abstract class Term extends NonPackedExpression
-  sealed abstract class Literal extends NonPackedExpression
+  sealed abstract class VariableReference extends Term
+  sealed abstract class Literal extends Term
   sealed abstract class FunctionCallLike extends NonPackedExpression
   sealed abstract class CurriedCall extends FunctionCallLike
 
@@ -853,17 +854,19 @@ object FunnelPEG {
 
   // Individual terms that don't imply a name pack (unlike local vars, which when dereferenced will
   // form an inline value/type pack).
-  case class GlobalValueVar(g: GlobalVar[ValueKind.type]) extends Term with ValueComponent {
+  case class GlobalValueVar(g: GlobalVar[ValueKind.type]) extends VariableReference
+      with ValueComponent {
     override def asValuePack = StandalonePack(ValueKind, g).convertPack
   }
-  case class GlobalTypeVar(g: GlobalVar[TypeKind.type]) extends Term with TypeComponent {
+  case class GlobalTypeVar(g: GlobalVar[TypeKind.type]) extends VariableReference
+      with TypeComponent {
     override def asTypePack = StandalonePack(TypeKind, g).convertPack
   }
 
   // Local variable values (imply a named pack when used inline):
   case class LocalValueVar[L <: LocalIdentifierKinds[ValueKind.type]](
     l: LocalVar[ValueKind.type, L],
-  ) extends Term
+  ) extends VariableReference
       with ValueComponent
       with HasNamedIdentifier[ValueKind.type] {
     override def asValuePack = StandalonePack(ValueKind, l).convertPack
@@ -871,7 +874,7 @@ object FunnelPEG {
   }
   case class LocalTypeVar[L <: LocalIdentifierKinds[TypeKind.type]](
     l: LocalVar[TypeKind.type, L],
-  ) extends Term
+  ) extends VariableReference
       with TypeComponent
       with HasNamedIdentifier[TypeKind.type] {
     override def asTypePack = StandalonePack(TypeKind, l).convertPack
@@ -1248,13 +1251,16 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   // Parse identifiers:
-  def ParseRestOfIdentifier: Rule0 = rule { zeroOrMore(CharPredicate.AlphaNum | anyOf("-_")) }
+  def ParseRestOfIdentifier: Rule0 = rule {
+    zeroOrMore(CharPredicate.AlphaNum | anyOf("-_")) ~
+    WhiteSpace
+  }
   def ParseValueIdentifier: Rule1[NamedIdentifier[ValueKind.type]] = rule {
-    capture((CharPredicate.LowerAlpha | anyOf("-")) ~ ParseRestOfIdentifier) ~ WhiteSpace ~> (
+    capture((CharPredicate.LowerAlpha | anyOf("-")) ~ ParseRestOfIdentifier) ~> (
       (s: String) => NamedIdentifier[ValueKind.type](s))
   }
   def ParseTypeIdentifier: Rule1[NamedIdentifier[TypeKind.type]] = rule {
-    capture((CharPredicate.UpperAlpha | anyOf("_")) ~ ParseRestOfIdentifier) ~ WhiteSpace ~> (
+    capture((CharPredicate.UpperAlpha | anyOf("_")) ~ ParseRestOfIdentifier) ~> (
       (s: String) => NamedIdentifier[TypeKind.type](s))
   }
   def ParseGlobalValueVar: Rule1[GlobalValueVar] = rule {
@@ -1356,7 +1362,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   // Parse parameter declarations:
   // First, value:
   def ParseValueParamDeclNoInline: Rule1[ValueParamDeclNoInline] = rule {
-    "(" ~ ParseValueParamDeclInline.+(",") ~ ")" ~> (
+    "(" ~ CommaSeparatedPack(() => ParseValueParamDeclInline) ~ ")" ~> (
       (fields: Seq[ValueParamDeclInline]) => ValueParamDeclNoInline.mergeInline(fields)
     )
   }
@@ -1375,7 +1381,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   // Second, type:
   def ParseTypeParamDeclNoInline: Rule1[TypeParamDeclNoInline] = rule {
-    "[" ~ ParseTypeParamDeclInline.+(",") ~ "]" ~> (
+    "[" ~ CommaSeparatedPack(() => ParseTypeParamDeclInline) ~ "]" ~> (
       (fields: Seq[TypeParamDeclInline]) => TypeParamDeclNoInline.mergeInline(fields)
     )
   }
@@ -1432,7 +1438,9 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
       | ParseAllNonCurriedTypePacks ~ "<-" ~ ParseIncompleteCurryTypeChain ~> (
           (rhs: TypeComponent, lhs: IncompleteCurryTypeChain) =>
           CompletedCurryTypeChain(lhs.components :+ rhs)
-        )))
+      )
+      | ParseAllCurriedTypePacks ~> (
+        (single: TypeComponent) => CompletedCurryTypeChain(Seq(single)))))
   }
   def ParseAllCurryTypeChains: Rule1[TypeComponent] = rule {
     ParseIncompleteCurryTypeChain |
@@ -1442,12 +1450,12 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   // Parse ALL the packing expressions!!!!
   // First, values:
   def ParsePositionalValuePackExpression: Rule1[PositionalValuePackExpression] = rule {
-    "(" ~ ParseAllValueExpressions.+(",") ~ ")" ~> (
+    "(" ~ CommaSeparatedPack(() => ParseAllValueExpressions) ~ ")" ~> (
       (exprs: Seq[ValueComponent]) => PositionalValuePackExpression(exprs)
     )
   }
   def ParseNamedValuePackExpressionNoInline: Rule1[NamedValuePackExpressionNoInline] = rule {
-    "(" ~ ParseInlineNamedValuePack.+(",") ~ ")" ~> (
+    "(" ~ CommaSeparatedPack(() => ParseInlineNamedValuePack) ~ ")" ~> (
       (exprs: Seq[InlineNamedValuePack]) => NamedValuePackExpressionNoInline.mergeInline(exprs)
     )
   }
@@ -1459,7 +1467,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   def ParseCurryNamedValuePackExpressionNoInline: Rule1[CurryNamedValuePackExpressionNoInline] = rule {
     ("(" ~
-      ParseInlineNamedValuePack.*(",") ~
+      ParseInlineNamedValuePack.*(SpacedComma) ~
       ParseInlineCurryNamedValuePack ~
       ")") ~> (
       (firstFew: Seq[InlineNamedValuePack], last: InlineCurryNamedValuePack) => {
@@ -1476,7 +1484,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   def ParseCurryPositionalValuePackExpressionNoInline: Rule1[CurryPositionalValuePackExpressionNoInline] = rule {
     ("(" ~
-      ParseAllValueExpressionsWithoutPositionalAmbiguity.*(",") ~
+      ParseAllValueExpressionsWithoutPositionalAmbiguity.*(SpacedComma) ~
       ParseInlineCurryPositionalValuePack ~
       ")") ~> (
       (firstFew: Seq[ValueComponent], last: InlineCurryPositionalValuePack) =>
@@ -1511,12 +1519,12 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   // Second, types:
   def ParsePositionalTypePackExpression: Rule1[PositionalTypePackExpression] = rule {
-    "[" ~ ParseAllTypeExpressions.+(",") ~ "]" ~> (
+    "[" ~ CommaSeparatedPack(() => ParseAllTypeExpressions) ~ "]" ~> (
       (exprs: Seq[TypeComponent]) => PositionalTypePackExpression(exprs)
     )
   }
   def ParseNamedTypePackExpressionNoInline: Rule1[NamedTypePackExpressionNoInline] = rule {
-    "[" ~ ParseInlineNamedTypePack.+(",") ~ "]" ~> (
+    "[" ~ CommaSeparatedPack(() => ParseInlineNamedTypePack) ~ "]" ~> (
       (exprs: Seq[InlineNamedTypePack]) => NamedTypePackExpressionNoInline.mergeInline(exprs)
     )
   }
@@ -1528,14 +1536,13 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   def ParseCurryNamedTypePackExpressionNoInline: Rule1[CurryNamedTypePackExpressionNoInline] = rule {
     ("[" ~
-      ParseInlineNamedTypePack.*(",") ~
+      ParseInlineNamedTypePack.*(SpacedComma) ~
       ParseInlineCurryNamedTypePack ~
       "]") ~> (
       (firstFew: Seq[InlineNamedTypePack], last: InlineCurryNamedTypePack) => {
         // Param declarations begin with a backslash -- this is unambiguous.
         val firstMerged = NamedTypePackExpressionNoInline.mergeInline(firstFew)
         // Param declarations begin with a backslash -- this is unambiguous.
-
         CurryNamedTypePackExpressionNoInline(firstMerged.fulfilled + (last.name -> last.value))
       //Enum declarations
       }
@@ -1552,7 +1559,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   def ParseCurryPositionalTypePackExpressionNoInline: Rule1[CurryPositionalTypePackExpressionNoInline] = rule {
     ("[" ~
-      ParseAllTypeExpressionsWithoutPositionalAmbiguity.*(",") ~
+      ParseAllTypeExpressionsWithoutPositionalAmbiguity.*(SpacedComma) ~
       ParseInlineCurryPositionalTypePack ~
       "]") ~> (
       (firstFew: Seq[TypeComponent], last: InlineCurryPositionalTypePack) =>
@@ -1585,6 +1592,9 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseAllNonCurriedTypePacks |
     ParseAllCurryTypeChains
   }
+  // def ParseAllTypeNonPacks: Rule1[TypeComponent] = rule {
+  //   Parse
+  // }
 
   // Function call-like things.
   // NB: We special-case function sources when called inline, e.g.:
@@ -1727,12 +1737,12 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
   // Second, whole enum decls:
   def ParseValueEnumDecl: Rule1[ValueEnumDecl] = rule {
-    ("(" ~ ParseValueEnumDeclCase.+(",") ~ ")") ~> (
+    ("(" ~ CommaSeparatedPack(() => ParseValueEnumDeclCase) ~ ")") ~> (
       (cases: Seq[ValueEnumDeclCase]) => ValueEnumDecl(cases)
     )
   }
   def ParseTypeEnumDecl: Rule1[TypeEnumDecl] = rule {
-    ("[" ~ ParseTypeEnumDeclCase.+(",") ~ "]") ~> (
+    ("[" ~ CommaSeparatedPack(() => ParseTypeEnumDeclCase) ~ "]") ~> (
       (cases: Seq[TypeEnumDeclCase]) => TypeEnumDecl(cases)
     )
   }
@@ -1762,18 +1772,18 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   // Assertions:
   def ParseAssertionForValueValue: Rule1[AssertionForValueValue] = rule {
-    (ParseAllValueExpressions ~ "<!=" ~ ParseAllValueExpressions ~> (
+    (ParseAllValueExpressionsWithoutPositionalAmbiguity ~ "<!=" ~ ParseAllValueExpressions ~> (
       (dest: ValueComponent, source: ValueComponent) => AssertionForValueValue(dest, source)
     )
-      | ParseAllValueExpressions ~ "=!>" ~ ParseAllValueExpressions ~> (
+      | ParseAllValueExpressionsWithoutPositionalAmbiguity ~ "=!>" ~ ParseAllValueExpressions ~> (
         (source: ValueComponent, dest: ValueComponent) => AssertionForValueValue(dest, source)
       ))
   }
   def ParseAssertionForValueType: Rule1[AssertionForValueType] = rule {
-    (ParseAllValueExpressions ~ "<!=" ~ ParseAllTypeExpressions ~> (
+    (ParseAllValueExpressionsWithoutPositionalAmbiguity ~ "<!=" ~ ParseAllTypeExpressions ~> (
       (dest: ValueComponent, source: TypeComponent) => AssertionForValueType(dest, source)
     )
-      | ParseAllTypeExpressions ~ "=!>" ~ ParseAllValueExpressions ~> (
+      | ParseAllTypeExpressionsWithoutPositionalAmbiguity ~ "=!>" ~ ParseAllValueExpressions ~> (
         (source: TypeComponent, dest: ValueComponent) => AssertionForValueType(dest, source)
       ))
   }
@@ -1782,10 +1792,10 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseAssertionForValueType
   }
   def ParseAssertionForTypeType: Rule1[AssertionForTypeType] = rule {
-    (ParseAllTypeExpressions ~ "<!-" ~ ParseAllTypeExpressions ~> (
+    (ParseAllTypeExpressionsWithoutPositionalAmbiguity ~ "<!-" ~ ParseAllTypeExpressions ~> (
       (dest: TypeComponent, source: TypeComponent) => AssertionForTypeType(dest, source)
     )
-      | ParseAllTypeExpressions ~ "-!>" ~ ParseAllTypeExpressions ~> (
+      | ParseAllTypeExpressionsWithoutPositionalAmbiguity ~ "-!>" ~ ParseAllTypeExpressions ~> (
         (source: TypeComponent, dest: TypeComponent) => AssertionForTypeType(dest, source)
       ))
   }
@@ -1795,10 +1805,15 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   def NewLine: Rule0 = rule { oneOrMore("\n") }
   def WhiteSpace: Rule0 = rule { zeroOrMore(anyOf(" \n\r\t\f")) }
+
   // See https://github.com/cosmicexplorer/parboiled2#handling-whitespace for recommendations on
   // handling whitespace with PEG parsers (namely, by matching whitespace strictly after every
   // terminal).
-  implicit def whitespaceLiteralConverter(s: String): Rule0 = rule {
-    str(s) ~ WhiteSpace
+  def StickyToken(s: String): Rule0 = rule { s }
+  def SpacedToken(s: String): Rule0 = rule { s ~ WhiteSpace }
+
+  def SpacedComma: Rule0 = rule { SpacedToken(",") }
+  def CommaSeparatedPack[T](r: () => Rule1[T]): Rule1[Seq[T]] = rule {
+    r().+(SpacedComma) ~ SpacedComma.?
   }
 }
