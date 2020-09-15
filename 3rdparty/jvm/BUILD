@@ -5,7 +5,6 @@ jar_library(
   ],
 )
 
-
 jar_library(
   name='scalatest',
   jars=[

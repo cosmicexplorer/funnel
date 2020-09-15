@@ -1,6 +1,7 @@
 package funnel.language
 
 import EntityData._
+import Errors._
 import FunnelPEG._
 
 import org.junit.runner.RunWith
@@ -71,36 +72,46 @@ class ParserSpec extends FreeSpec with Matchers {
           IntegerLiteral(3))))
       }
       "should correctly parse inline named packs" in {
-        parseTypeExpression(".T") should be (InlineNamedTypePack(
+        parseTypeExpression(".T,") should be (InlineNamedTypePack(
           name = typeName("T"),
           value = localType("T")))
-        parseTypeExpression(".T[$Y]") should be (InlineNamedTypePack(
+        parseTypeExpression(".T[$Y],") should be (InlineNamedTypePack(
           name = typeName("T"),
-          value = typeGroup(globalType("Y")),
+          value = globalType("Y"),
         ))
         // TODO: make this exception type better?
         // Note that this fails, while [$Y, ] works, because that is a positional parameter
         // pack. The intent of explicitly failing for trailing commas is to avoid any confusion
         // about whether the grouped type/value is a parameter pack (and therefore an inline
         // function call), vs being an inline pack expression.
-        val caughtTypeGroup = intercept[Exception] {
-          parseTypeExpression(".T[$Y,]")
+        val caughtTypeGroup = intercept[NoTrailingCommaError] {
+          parseTypeExpression(".T[$Y,],")
         }
         assert(caughtTypeGroup.getMessage
-          .contains("a comma at the end of a type grouping is invalid"))
-        parseValueExpression(".x") should be (InlineNamedValuePack(
+          .contains("a trailing comma is not allowed in the definition section of a named type pack"))
+        parseValueExpression(".x,") should be (InlineNamedValuePack(
           name = valName("x"),
           value = localVal("x"),
         ))
-        parseValueExpression(".x(3)") should be (InlineNamedValuePack(
+        parseValueExpression(".x(3),") should be (InlineNamedValuePack(
           name = valName("x"),
-          value = valGroup(IntegerLiteral(3)),
+          value = IntegerLiteral(3),
         ))
-        val caughtValueGroup = intercept[Exception] {
-          parseValueExpression(".x(3,)")
+        val caughtValueGroup = intercept[NoTrailingCommaError] {
+          parseValueExpression(".x(3,),")
         }
         assert(caughtValueGroup.getMessage
-          .contains("a comma at the end of a value grouping is invalid"))
+          .contains("a trailing comma is not allowed in the definition section of a named value pack"))
+      }
+      "should correctly parse non-inline named packs" in {
+        parseTypeExpression("[.T, .X[.Y]]") should be (NamedTypePackExpressionNoInline(Map(
+          typeName("T") -> localType("T"),
+          typeName("X") -> localType("Y"),
+        )))
+        parseValueExpression("(.x, .y(.z))") should be (NamedValuePackExpressionNoInline(Map(
+          valName("x") -> localVal("x"),
+          valName("y") -> localVal("z"),
+        )))
       }
     }
 

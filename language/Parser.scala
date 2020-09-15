@@ -43,6 +43,8 @@ object Errors {
     message: String,
   ) extends FunnelParseError(s"could not join expression chains $lhs and $rhs: $message")
 
+  case class NoTrailingCommaError(message: String) extends FunnelParseError(message)
+
   // case class PullOutNewTypeParamsError(
   //   parent: AstNode, typeParams: TypeParamPack, message: String,
   // ) extends InternalError(
@@ -852,8 +854,7 @@ object FunnelPEG {
     override def asTypePack: TypePackPairs = StandalonePack(TypeKind, TypePlaceholder).convertPack
   }
 
-  // Individual terms that don't imply a name pack (unlike local vars, which when dereferenced will
-  // form an inline value/type pack).
+  // Individual terms that don't imply a pack expression.
   case class GlobalValueVar(g: GlobalVar[ValueKind.type]) extends VariableReference
       with ValueComponent {
     override def asValuePack = StandalonePack(ValueKind, g).convertPack
@@ -862,8 +863,6 @@ object FunnelPEG {
       with TypeComponent {
     override def asTypePack = StandalonePack(TypeKind, g).convertPack
   }
-
-  // Local variable values (imply a named pack when used inline):
   case class LocalValueVar[L <: LocalIdentifierKinds[ValueKind.type]](
     l: LocalVar[ValueKind.type, L],
   ) extends VariableReference
@@ -967,10 +966,18 @@ object FunnelPEG {
   ) extends NamedPackedExpression with ValueComponent {
     override def asValuePack = NamedPack(Map(name -> value.intoChain)).convertPack
   }
+  object CurryNamedValuePackExpressionNoInline {
+    def fromNonCurried(pack: NamedValuePackExpressionNoInline) =
+      CurryNamedValuePackExpressionNoInline(pack.fulfilled)
+  }
   case class CurryNamedValuePackExpressionNoInline(
     fulfilled: Map[NamedIdentifier[ValueKind.type], ValueComponent],
   ) extends CurryNamedPackedExpression with ValueComponent {
     override def asValuePack = NamedPack(fulfilled.mapValues(_.intoChain)).convertPack
+  }
+  object InlineCurryNamedValuePack {
+    def fromNonCurried(pack: InlineNamedValuePack) =
+      InlineCurryNamedValuePack(pack.name, pack.value)
   }
   case class InlineCurryNamedValuePack(
     name: NamedIdentifier[ValueKind.type],
@@ -1007,10 +1014,18 @@ object FunnelPEG {
   ) extends NamedPackedExpression with TypeComponent {
     override def asTypePack = NamedPack(Map(name -> value.intoChain)).convertPack
   }
+  object CurryNamedTypePackExpressionNoInline {
+    def fromNonCurried(pack: NamedTypePackExpressionNoInline) =
+      CurryNamedTypePackExpressionNoInline(pack.fulfilled)
+  }
   case class CurryNamedTypePackExpressionNoInline(
     fulfilled: Map[NamedIdentifier[TypeKind.type], TypeComponent],
   ) extends CurryNamedPackedExpression with TypeComponent {
     override def asTypePack = NamedPack(fulfilled.mapValues(_.intoChain)).convertPack
+  }
+  object InlineCurryNamedTypePack {
+    def fromNonCurried(pack: InlineNamedTypePack) =
+      InlineCurryNamedTypePack(pack.name, pack.value)
   }
   case class InlineCurryNamedTypePack(
     name: NamedIdentifier[TypeKind.type],
@@ -1158,7 +1173,7 @@ object FunnelPEG {
 
 class FunnelPEG(override val input: ParserInput) extends Parser {
   import EntityData._
-  // import Packs._
+  import Errors._
   import FunnelPEG._
 
   // Define the parsing rules.
@@ -1236,6 +1251,7 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseAllValueTypeFunctionCalls |
     ParseGroupingForValue |
     ParseGlobalValueVar |
+    ParseNamedLocalValueVar |
     ParseAllLiterals |
     ParseAllValueAssertions
   }
@@ -1247,13 +1263,13 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseAllTypeTypeFunctionCalls |
     ParseGroupingForType |
     ParseGlobalTypeVar |
+    ParseNamedLocalTypeVar |
     ParseAllTypeAssertions
   }
 
   // Parse identifiers:
   def ParseRestOfIdentifier: Rule0 = rule {
-    zeroOrMore(CharPredicate.AlphaNum | anyOf("-_")) ~
-    WhiteSpace
+    zeroOrMore(CharPredicate.AlphaNum | anyOf("-_"))
   }
   def ParseValueIdentifier: Rule1[NamedIdentifier[ValueKind.type]] = rule {
     capture((CharPredicate.LowerAlpha | anyOf("-")) ~ ParseRestOfIdentifier) ~> (
@@ -1310,21 +1326,19 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   }
 
   // Parse groupings:
-  def ParseGroupingForValue: Rule1[GroupingForValue] = rule {
-    (("(" ~ ParseAllValueExpressions ~ ")")
-      // Trailing commas in groupings make them look like pack expressions. Explicitly fail here to
-      // avoid this ambiguity.
-      | ("(" ~ ParseAllValueExpressions ~ SpacedComma ~ ")" ~
-        fail("a comma at the end of a value grouping is invalid"))) ~> (
-      (ve: ValueComponent) => GroupingForValue(ve))
+  def ParseGroupingForValue: Rule1[GroupingForValue] = {
+    val inner = () => ParenthesizedNoTrailingComma(
+      () => ParseAllValueExpressions,
+      subexpressionType = "a value grouping",
+    )
+    rule { inner() ~> ((ve: ValueComponent) => GroupingForValue(ve)) }
   }
-  def ParseGroupingForType: Rule1[GroupingForType] = rule {
-    (("[" ~ ParseAllTypeExpressions ~ "]")
-      // Trailing commas in groupings make them look like pack expressions. Explicitly fail here to
-      // avoid this ambiguity.
-      | ("[" ~ ParseAllTypeExpressions ~ SpacedComma ~ "]" ~
-        fail("a comma at the end of a type grouping is invalid"))) ~> (
-      (te: TypeComponent) => GroupingForType(te))
+  def ParseGroupingForType: Rule1[GroupingForType] = {
+    val inner = () => SquareBracedNoTrailingComma(
+      () => ParseAllTypeExpressions,
+      subexpressionType = "a type grouping",
+    )
+    rule { inner() ~> ((te: TypeComponent) => GroupingForType(te)) }
   }
 
   // These two rules are crucial. They define "atomic" splits of chains of value/type expressions
@@ -1347,6 +1361,9 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseGroupingForValue |
     // Global values begin with a $ -- this is unique.
     ParseGlobalValueVar |
+    // Local value references begin with a ., which is unique at this point.
+    ParseNamedLocalValueVar |
+    // Literals are always unique!
     ParseAllLiterals
     // Assertions require grouping to avoid ambiguity, so they are removed.
   }
@@ -1365,22 +1382,32 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     // unambiguous.
     ParseGroupingForType |
     // Global values begin with a $ -- this is unique.
-    ParseGlobalTypeVar
+    ParseGlobalTypeVar |
+    // Local value references begin with a ., which is unique at this point.
+    ParseNamedLocalTypeVar
     // Assertions require grouping to avoid ambiguity, so they are removed.
   }
 
   // Parse parameter declarations:
   // First, value:
-  def ParseValueParamDeclNoInline: Rule1[ValueParamDeclNoInline] = rule {
-    "(" ~ CommaSeparatedPack(() => ParseValueParamDeclInline) ~ ")" ~> (
+  def ParseValueParamDeclNoInline: Rule1[ValueParamDeclNoInline] = {
+    val commaDeclPack = () => ParenthesizedCommaPack(() => ParseValueParamDeclInline)
+    rule { commaDeclPack() ~> (
       (fields: Seq[ValueParamDeclInline]) => ValueParamDeclNoInline.mergeInline(fields)
-    )
+    )}
   }
-  def _ParseValueParamDeclInlineReduced: Rule1[ValueParamDeclInline] = rule {
-    ParseNamedLocalValueVar ~ ParseGroupingForType.? ~> (
-      (lv: LocalValueVar[LocalNamedIdentifier[ValueKind.type]], constraint: Option[GroupingForType]) =>
-      ValueParamDeclInline(lv.namedIdentifier, constraint.getOrElse(PlaceholderForType))
+  def _ParseValueParamDeclInlineReduced: Rule1[ValueParamDeclInline] = {
+    val constraintSection = () => SquareBracedNoTrailingComma(
+      () => ParseAllTypeExpressions,
+      subexpressionType = "the type constraint section of a named value parameter declaration",
     )
+    rule {
+      ParseNamedLocalValueVar ~
+      constraintSection().? ~> (
+        (lv: LocalValueVar[LocalNamedIdentifier[ValueKind.type]], constraint: Option[TypeComponent]) =>
+        ValueParamDeclInline(lv.namedIdentifier, constraint.getOrElse(PlaceholderForType))
+      )
+    }
   }
   def ParseValueParamDeclInline: Rule1[ValueParamDeclInline] = rule {
     "\\" ~ _ParseValueParamDeclInlineReduced
@@ -1390,16 +1417,24 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseValueParamDeclInline
   }
   // Second, type:
-  def ParseTypeParamDeclNoInline: Rule1[TypeParamDeclNoInline] = rule {
-    "[" ~ CommaSeparatedPack(() => ParseTypeParamDeclInline) ~ "]" ~> (
+  def ParseTypeParamDeclNoInline: Rule1[TypeParamDeclNoInline] = {
+    val commaDeclPack = () => SquareBracedCommaPack(() => ParseTypeParamDeclInline)
+    rule { commaDeclPack() ~> (
       (fields: Seq[TypeParamDeclInline]) => TypeParamDeclNoInline.mergeInline(fields)
-    )
+    )}
   }
-  def _ParseTypeParamDeclInlineReduced: Rule1[TypeParamDeclInline] = rule {
-    ParseNamedLocalTypeVar ~ ParseGroupingForType.? ~> (
-      (lv: LocalTypeVar[LocalNamedIdentifier[TypeKind.type]], constraint: Option[GroupingForType]) =>
-      TypeParamDeclInline(lv.namedIdentifier, constraint.getOrElse(PlaceholderForType))
+  def _ParseTypeParamDeclInlineReduced: Rule1[TypeParamDeclInline] = {
+    val constraintSection = () => SquareBracedNoTrailingComma(
+      () => ParseAllTypeExpressions,
+      subexpressionType = "the type constraint section of a named type parameter declaration",
     )
+    rule {
+      ParseNamedLocalTypeVar ~
+      constraintSection().? ~> (
+        (lv: LocalTypeVar[LocalNamedIdentifier[TypeKind.type]], constraint: Option[TypeComponent]) =>
+        TypeParamDeclInline(lv.namedIdentifier, constraint.getOrElse(PlaceholderForType))
+      )
+    }
   }
   def ParseTypeParamDeclInline: Rule1[TypeParamDeclInline] = rule {
     "\\" ~ _ParseTypeParamDeclInlineReduced
@@ -1459,50 +1494,58 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
 
   // Parse ALL the packing expressions!!!!
   // First, values:
-  def ParsePositionalValuePackExpression: Rule1[PositionalValuePackExpression] = rule {
-    "(" ~ CommaSeparatedPack(() => ParseAllValueExpressions) ~ ")" ~> (
+  def ParsePositionalValuePackExpression: Rule1[PositionalValuePackExpression] = {
+    val commaPack = { () =>
+      ParenthesizedCommaPack(() => ParseAllValueExpressionsWithoutPositionalAmbiguity)
+    }
+    rule { commaPack() ~> (
       (exprs: Seq[ValueComponent]) => PositionalValuePackExpression(exprs)
-    )
+    )}
   }
-  def ParseNamedValuePackExpressionNoInline: Rule1[NamedValuePackExpressionNoInline] = rule {
-    "(" ~ CommaSeparatedPack(() => ParseInlineNamedValuePack) ~ ")" ~> (
+  def ParseNamedValuePackExpressionNoInline: Rule1[NamedValuePackExpressionNoInline] = {
+    val commaPack = () => ParenthesizedCommaPack(() => _ParseInlineNamedValuePackReduced)
+    rule { commaPack() ~> (
       (exprs: Seq[InlineNamedValuePack]) => NamedValuePackExpressionNoInline.mergeInline(exprs)
+    )}
+  }
+  def _ParseInlineNamedValuePackReduced: Rule1[InlineNamedValuePack] = {
+    val definitionSection = () => ParenthesizedNoTrailingComma(
+      () => ParseAllValueExpressions,
+      subexpressionType = "the definition section of a named value pack",
     )
+    rule {
+      ParseNamedLocalValueVar ~ definitionSection().? ~> (
+        ((lv: LocalValueVar[LocalNamedIdentifier[ValueKind.type]], value: Option[ValueComponent]) => {
+          InlineNamedValuePack(lv.namedIdentifier, value.getOrElse(lv))
+        }))
+    }
   }
   def ParseInlineNamedValuePack: Rule1[InlineNamedValuePack] = rule {
-    ParseNamedLocalValueVar ~ ParseGroupingForValue.? ~> (
-      (lv: LocalValueVar[LocalNamedIdentifier[ValueKind.type]], value: Option[GroupingForValue]) =>
-      InlineNamedValuePack(lv.namedIdentifier, value.getOrElse(lv))
-    )
+    _ParseInlineNamedValuePackReduced ~ SpaceAfterComma
   }
-  def ParseCurryNamedValuePackExpressionNoInline: Rule1[CurryNamedValuePackExpressionNoInline] = rule {
-    ("(" ~
-      ParseInlineNamedValuePack.*(SpacedComma) ~
-      ParseInlineCurryNamedValuePack ~
-      ")") ~> (
-      (firstFew: Seq[InlineNamedValuePack], last: InlineCurryNamedValuePack) => {
-        val firstMerged = NamedValuePackExpressionNoInline.mergeInline(firstFew)
-        CurryNamedValuePackExpressionNoInline(firstMerged.fulfilled + (last.name -> last.value))
-      }
-    )
+  def ParseCurryNamedValuePackExpressionNoInline: Rule1[CurryNamedValuePackExpressionNoInline] = {
+    val commaCurryPack = () => ParenthesizedCommaCurryPack(() => _ParseInlineNamedValuePackReduced)
+    rule { commaCurryPack() ~> (
+      (fields: Seq[InlineNamedValuePack]) =>
+      CurryNamedValuePackExpressionNoInline.fromNonCurried(
+        NamedValuePackExpressionNoInline.mergeInline(fields))
+    )}
   }
   def ParseInlineCurryNamedValuePack: Rule1[InlineCurryNamedValuePack] = rule {
-    ParseNamedLocalValueVar ~ ParseGroupingForValue.? ~ "," ~ "..." ~> (
-      (lv: LocalValueVar[LocalNamedIdentifier[ValueKind.type]], value: Option[GroupingForValue]) =>
-      InlineCurryNamedValuePack(lv.namedIdentifier, value.getOrElse(lv))
+    ParseInlineNamedValuePack ~ SpaceAfterCurry ~> (
+      (pack: InlineNamedValuePack) => InlineCurryNamedValuePack.fromNonCurried(pack)
     )
   }
-  def ParseCurryPositionalValuePackExpressionNoInline: Rule1[CurryPositionalValuePackExpressionNoInline] = rule {
-    ("(" ~
-      ParseAllValueExpressionsWithoutPositionalAmbiguity.*(SpacedComma) ~
-      ParseInlineCurryPositionalValuePack ~
-      ")") ~> (
-      (firstFew: Seq[ValueComponent], last: InlineCurryPositionalValuePack) =>
-      CurryPositionalValuePackExpressionNoInline(firstFew :+ last.expr)
-    )
+  def ParseCurryPositionalValuePackExpressionNoInline: Rule1[CurryPositionalValuePackExpressionNoInline] = {
+    val commaCurryPack = { () =>
+      ParenthesizedCommaCurryPack(() => ParseAllValueExpressionsWithoutPositionalAmbiguity)
+    }
+    rule { commaCurryPack() ~> (
+      (exprs: Seq[ValueComponent]) => CurryPositionalValuePackExpressionNoInline(exprs)
+    )}
   }
   def ParseInlineCurryPositionalValuePack: Rule1[InlineCurryPositionalValuePack] = rule {
-    ParseAllValueExpressionsWithoutPositionalAmbiguity ~ "," ~ "..." ~> (
+    ParseAllValueExpressionsWithoutPositionalAmbiguity ~ SpaceAfterCurry ~> (
       (expr: ValueComponent) => InlineCurryPositionalValuePack(expr)
     )
   }
@@ -1528,56 +1571,58 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseAllCurryValueChains
   }
   // Second, types:
-  def ParsePositionalTypePackExpression: Rule1[PositionalTypePackExpression] = rule {
-    "[" ~ CommaSeparatedPack(() => ParseAllTypeExpressions) ~ "]" ~> (
+  def ParsePositionalTypePackExpression: Rule1[PositionalTypePackExpression] = {
+    val commaPack = {
+      () => SquareBracedCommaPack(() => ParseAllTypeExpressionsWithoutPositionalAmbiguity)
+    }
+    rule { commaPack() ~> (
       (exprs: Seq[TypeComponent]) => PositionalTypePackExpression(exprs)
-    )
+    )}
   }
-  def ParseNamedTypePackExpressionNoInline: Rule1[NamedTypePackExpressionNoInline] = rule {
-    "[" ~ CommaSeparatedPack(() => ParseInlineNamedTypePack) ~ "]" ~> (
+  def ParseNamedTypePackExpressionNoInline: Rule1[NamedTypePackExpressionNoInline] = {
+    val commaPack = () => SquareBracedCommaPack(() => _ParseInlineNamedTypePackReduced)
+    rule { commaPack() ~> (
       (exprs: Seq[InlineNamedTypePack]) => NamedTypePackExpressionNoInline.mergeInline(exprs)
+    )}
+  }
+  def _ParseInlineNamedTypePackReduced: Rule1[InlineNamedTypePack] = {
+    val definitionSection = () => SquareBracedNoTrailingComma(
+      () => ParseAllTypeExpressions,
+      subexpressionType = "the definition section of a named type pack",
     )
+    rule {
+      ParseNamedLocalTypeVar ~ definitionSection().? ~> (
+        (lv: LocalTypeVar[LocalNamedIdentifier[TypeKind.type]], value: Option[TypeComponent]) =>
+        InlineNamedTypePack(lv.namedIdentifier, value.getOrElse(lv))
+      )
+    }
   }
   def ParseInlineNamedTypePack: Rule1[InlineNamedTypePack] = rule {
-    ParseNamedLocalTypeVar ~ ParseGroupingForType.? ~> (
-      (lv: LocalTypeVar[LocalNamedIdentifier[TypeKind.type]], value: Option[GroupingForType]) =>
-      InlineNamedTypePack(lv.namedIdentifier, value.getOrElse(lv))
-    )
+    _ParseInlineNamedTypePackReduced ~ SpaceAfterComma
   }
-  def ParseCurryNamedTypePackExpressionNoInline: Rule1[CurryNamedTypePackExpressionNoInline] = rule {
-    ("[" ~
-      ParseInlineNamedTypePack.*(SpacedComma) ~
-      ParseInlineCurryNamedTypePack ~
-      "]") ~> (
-      (firstFew: Seq[InlineNamedTypePack], last: InlineCurryNamedTypePack) => {
-        // Param declarations begin with a backslash -- this is unambiguous.
-        val firstMerged = NamedTypePackExpressionNoInline.mergeInline(firstFew)
-        // Param declarations begin with a backslash -- this is unambiguous.
-        CurryNamedTypePackExpressionNoInline(firstMerged.fulfilled + (last.name -> last.value))
-      //Enum declarations
-      }
-    )
+  def ParseCurryNamedTypePackExpressionNoInline: Rule1[CurryNamedTypePackExpressionNoInline] = {
+    val commaCurryPack = () => SquareBracedCommaCurryPack(() => _ParseInlineNamedTypePackReduced)
+    rule { commaCurryPack() ~> (
+      (fields: Seq[InlineNamedTypePack]) =>
+      CurryNamedTypePackExpressionNoInline.fromNonCurried(
+        NamedTypePackExpressionNoInline.mergeInline(fields))
+    )}
   }
   def ParseInlineCurryNamedTypePack: Rule1[InlineCurryNamedTypePack] = rule {
-    ParseNamedLocalTypeVar ~ ParseGroupingForType.? ~ "," ~ "..." ~> (
-      (lv: LocalTypeVar[LocalNamedIdentifier[TypeKind.type]], value: Option[GroupingForType]) =>
-      // Param declarations begin with a backslash -- this is unambiguous.
-      InlineCurryNamedTypePack(lv.namedIdentifier, value.getOrElse(lv))
-        // Param declarations begin with a backslash -- this is unambiguous.
+    ParseInlineNamedTypePack ~ SpaceAfterCurry ~> (
+      (pack: InlineNamedTypePack) => InlineCurryNamedTypePack.fromNonCurried(pack)
     )
-    //Enum declarations
   }
-  def ParseCurryPositionalTypePackExpressionNoInline: Rule1[CurryPositionalTypePackExpressionNoInline] = rule {
-    ("[" ~
-      ParseAllTypeExpressionsWithoutPositionalAmbiguity.*(SpacedComma) ~
-      ParseInlineCurryPositionalTypePack ~
-      "]") ~> (
-      (firstFew: Seq[TypeComponent], last: InlineCurryPositionalTypePack) =>
-      CurryPositionalTypePackExpressionNoInline(firstFew :+ last.expr)
-    )
+  def ParseCurryPositionalTypePackExpressionNoInline: Rule1[CurryPositionalTypePackExpressionNoInline] = {
+    val commaCurryPack = { () =>
+      SquareBracedCommaCurryPack(() => ParseAllTypeExpressionsWithoutPositionalAmbiguity)
+    }
+    rule { commaCurryPack() ~> (
+      (exprs: Seq[TypeComponent]) => CurryPositionalTypePackExpressionNoInline(exprs)
+    )}
   }
   def ParseInlineCurryPositionalTypePack: Rule1[InlineCurryPositionalTypePack] = rule {
-    ParseAllTypeExpressionsWithoutPositionalAmbiguity ~ "," ~ "..." ~> (
+    ParseAllTypeExpressionsWithoutPositionalAmbiguity ~ SpaceAfterCurry ~> (
       (expr: TypeComponent) => InlineCurryPositionalTypePack(expr)
     )
   }
@@ -1602,9 +1647,6 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     ParseAllNonCurriedTypePacks |
     ParseAllCurryTypeChains
   }
-  // def ParseAllTypeNonPacks: Rule1[TypeComponent] = rule {
-  //   Parse
-  // }
 
   // Function call-like things.
   // NB: We special-case function sources when called inline, e.g.:
@@ -1615,6 +1657,10 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   // $f <= (1, 2, 3)
   // may use any value/type expression as the source.
   def _ParseInlineFunctionSourceValueExpression: Rule1[ValueComponent] = rule {
+    // TODO:
+    // (1) fix the curry incomplete/complete type packing
+    // (2) ensure that local variables are only inferred to be packs if they have a comma after
+    // them!!! that allows us to remove (?) this subexpression entirely.
     ParseGroupingForValue |
     ParseGlobalValueVar |
     ParseAllValueParamDecls
@@ -1746,15 +1792,13 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     )
   }
   // Second, whole enum decls:
-  def ParseValueEnumDecl: Rule1[ValueEnumDecl] = rule {
-    ("(" ~ CommaSeparatedPack(() => ParseValueEnumDeclCase) ~ ")") ~> (
-      (cases: Seq[ValueEnumDeclCase]) => ValueEnumDecl(cases)
-    )
+  def ParseValueEnumDecl: Rule1[ValueEnumDecl] = {
+    val commaPack = () => ParenthesizedCommaPack(() => ParseValueEnumDeclCase)
+    rule { commaPack() ~> ((cases: Seq[ValueEnumDeclCase]) => ValueEnumDecl(cases)) }
   }
-  def ParseTypeEnumDecl: Rule1[TypeEnumDecl] = rule {
-    ("[" ~ CommaSeparatedPack(() => ParseTypeEnumDeclCase) ~ "]") ~> (
-      (cases: Seq[TypeEnumDeclCase]) => TypeEnumDecl(cases)
-    )
+  def ParseTypeEnumDecl: Rule1[TypeEnumDecl] = {
+    val commaPack = () => SquareBracedCommaPack(() => ParseTypeEnumDeclCase)
+    rule { commaPack() ~> ((cases: Seq[TypeEnumDeclCase]) => TypeEnumDecl(cases)) }
   }
   // Third, enum case dereferences:
   def ParseValueEnumDeref: Rule1[ValueEnumDeref] = rule {
@@ -1820,10 +1864,67 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   // handling whitespace with PEG parsers (namely, by matching whitespace strictly after every
   // terminal).
   def StickyToken(s: String): Rule0 = rule { s }
-  def SpacedToken(s: String): Rule0 = rule { s ~ WhiteSpace }
+  def SpaceAfterToken(s: String): Rule0 = rule { s ~ WhiteSpace }
 
-  def SpacedComma: Rule0 = rule { SpacedToken(",") }
+  def SpaceAfterCurry: Rule0 = rule { SpaceAfterToken(",...") }
+  def SpaceAfterComma: Rule0 = rule { SpaceAfterToken(",") }
+
   def CommaSeparatedPack[T](r: () => Rule1[T]): Rule1[Seq[T]] = rule {
-    r().+(SpacedComma) ~ SpacedComma.?
+    r().+(SpaceAfterComma) ~ SpaceAfterComma.?
   }
+  def CommaSeparatedCurryPack[T](r: () => Rule1[T]): Rule1[Seq[T]] = rule {
+    r().+(SpaceAfterComma) ~ SpaceAfterCurry.?
+  }
+
+  def PairedDelimiters[T](r: () => Rule1[T], startToken: String, endToken: String): Rule1[T] = rule {
+    startToken ~ WhiteSpace ~ r() ~ WhiteSpace ~ endToken
+  }
+
+  def Parenthesized[T](r: () => Rule1[T]): Rule1[T] =
+    PairedDelimiters(r, startToken = "(", endToken = ")")
+  def SquareBraced[T](r: () => Rule1[T]): Rule1[T] =
+    PairedDelimiters(r, startToken = "[", endToken = "]")
+
+  // Trailing commas in groupings make them look like pack expressions. Explicitly fail here to
+  // avoid this ambiguity.
+  def _MaybeTrailingComma[T](r: () => Rule1[T]): Rule1[(T, Boolean)] = rule {
+    r() ~ WhiteSpace ~ capture(SpaceAfterComma).? ~> (
+      (inner: T, maybeComma: Option[String]) => (inner -> maybeComma.isDefined)
+    )
+  }
+  def _ParenthesizedMaybeTrailingComma[T](r: () => Rule1[T]): Rule1[(T, Boolean)] =
+    Parenthesized(() => _MaybeTrailingComma(r))
+  def _SquareBracedMaybeTrailingComma[T](r: () => Rule1[T]): Rule1[(T, Boolean)] =
+    SquareBraced(() => _MaybeTrailingComma(r))
+  def ParenthesizedNoTrailingComma[T](
+    r: () => Rule1[T],
+    subexpressionType: String,
+  ): Rule1[T] = rule {
+    _ParenthesizedMaybeTrailingComma(r) ~> ((tup: (T, Boolean)) => tup match {
+      case (_, true) =>
+        throw new NoTrailingCommaError(s"a trailing comma is not allowed in $subexpressionType")
+      case (inner, _) => inner
+    })
+  }
+  def SquareBracedNoTrailingComma[T](
+    r: () => Rule1[T],
+    subexpressionType: String,
+  ): Rule1[T] = rule {
+    _SquareBracedMaybeTrailingComma(r) ~> ((tup: (T, Boolean)) => tup match {
+      case (_, true) =>
+        throw new NoTrailingCommaError(s"a trailing comma is not allowed in $subexpressionType")
+      case (inner, _) => inner
+    }
+    )
+  }
+
+  def ParenthesizedCommaPack[T](r: () => Rule1[T]): Rule1[Seq[T]] =
+    Parenthesized(() => CommaSeparatedPack(r))
+  def SquareBracedCommaPack[T](r: () => Rule1[T]): Rule1[Seq[T]] =
+    SquareBraced(() => CommaSeparatedPack(r))
+
+  def ParenthesizedCommaCurryPack[T](r: () => Rule1[T]): Rule1[Seq[T]] =
+    Parenthesized(() => CommaSeparatedCurryPack(r))
+  def SquareBracedCommaCurryPack[T](r: () => Rule1[T]): Rule1[Seq[T]] =
+    SquareBraced(() => CommaSeparatedCurryPack(r))
 }
