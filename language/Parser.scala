@@ -43,8 +43,6 @@ object Errors {
     message: String,
   ) extends FunnelParseError(s"could not join expression chains $lhs and $rhs: $message")
 
-  case class NoTrailingCommaError(message: String) extends FunnelParseError(message)
-
   // case class PullOutNewTypeParamsError(
   //   parent: AstNode, typeParams: TypeParamPack, message: String,
   // ) extends InternalError(
@@ -1173,7 +1171,6 @@ object FunnelPEG {
 
 class FunnelPEG(override val input: ParserInput) extends Parser {
   import EntityData._
-  import Errors._
   import FunnelPEG._
 
   // Define the parsing rules.
@@ -1663,11 +1660,13 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
     // them!!! that allows us to remove (?) this subexpression entirely.
     ParseGroupingForValue |
     ParseGlobalValueVar |
+    ParseNamedLocalValueVar |
     ParseAllValueParamDecls
   }
   def _ParseInlineFunctionSourceTypeExpression: Rule1[TypeComponent] = rule {
     ParseGroupingForType |
     ParseGlobalTypeVar |
+    ParseNamedLocalTypeVar |
     ParseAllTypeParamDecls
   }
   // For an inline function call, we require that parentheses are used to denote the arguments pack,
@@ -1899,23 +1898,29 @@ class FunnelPEG(override val input: ParserInput) extends Parser {
   def ParenthesizedNoTrailingComma[T](
     r: () => Rule1[T],
     subexpressionType: String,
-  ): Rule1[T] = rule {
-    _ParenthesizedMaybeTrailingComma(r) ~> ((tup: (T, Boolean)) => tup match {
-      case (_, true) =>
-        throw new NoTrailingCommaError(s"a trailing comma is not allowed in $subexpressionType")
-      case (inner, _) => inner
-    })
+  ): Rule1[T] = {
+    val inner = () => _ParenthesizedMaybeTrailingComma(r)
+    rule {
+      inner() ~> ((tup: (T, Boolean)) => (
+        test(tup._2) ~ fail(s"a trailing comma is not allowed in $subexpressionType") ~ push(null)
+          // If the test fails (there was no comma), we push the inner value back on the stack. We
+          // must push(null) in the other case to make the inferred types work out.
+          | push(tup._1))
+      )
+    }
   }
   def SquareBracedNoTrailingComma[T](
     r: () => Rule1[T],
     subexpressionType: String,
-  ): Rule1[T] = rule {
-    _SquareBracedMaybeTrailingComma(r) ~> ((tup: (T, Boolean)) => tup match {
-      case (_, true) =>
-        throw new NoTrailingCommaError(s"a trailing comma is not allowed in $subexpressionType")
-      case (inner, _) => inner
-    }
-    )
+  ): Rule1[T] = {
+    val inner = () => _SquareBracedMaybeTrailingComma(r)
+    rule {
+      inner() ~> ((tup: (T, Boolean)) =>
+        test(tup._2) ~ fail(s"a trailing comma is not allowed in $subexpressionType") ~ push(null)
+          // If the test fails (there was no comma), we push the inner value back on the stack. We
+          // must push(null) in the other case to make the inferred types work out.
+          | push(tup._1)
+      )}
   }
 
   def ParenthesizedCommaPack[T](r: () => Rule1[T]): Rule1[Seq[T]] =

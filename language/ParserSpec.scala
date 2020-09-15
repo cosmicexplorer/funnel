@@ -1,7 +1,6 @@
 package funnel.language
 
 import EntityData._
-import Errors._
 import FunnelPEG._
 
 import org.junit.runner.RunWith
@@ -84,7 +83,7 @@ class ParserSpec extends FreeSpec with Matchers {
         // pack. The intent of explicitly failing for trailing commas is to avoid any confusion
         // about whether the grouped type/value is a parameter pack (and therefore an inline
         // function call), vs being an inline pack expression.
-        val caughtTypeGroup = intercept[NoTrailingCommaError] {
+        val caughtTypeGroup = intercept[Exception] {
           parseTypeExpression(".T[$Y,],")
         }
         assert(caughtTypeGroup.getMessage
@@ -97,7 +96,7 @@ class ParserSpec extends FreeSpec with Matchers {
           name = valName("x"),
           value = IntegerLiteral(3),
         ))
-        val caughtValueGroup = intercept[NoTrailingCommaError] {
+        val caughtValueGroup = intercept[Exception] {
           parseValueExpression(".x(3,),")
         }
         assert(caughtValueGroup.getMessage
@@ -111,6 +110,14 @@ class ParserSpec extends FreeSpec with Matchers {
         parseValueExpression("(.x, .y(.z))") should be (NamedValuePackExpressionNoInline(Map(
           valName("x") -> localVal("x"),
           valName("y") -> localVal("z"),
+        )))
+        parseTypeExpression("[.T, .X[.Y,],]") should be (NamedTypePackExpressionNoInline(Map(
+          typeName("T") -> localType("T"),
+          typeName("X") -> InlineNamedTypePack(typeName("Y"), localType("Y")),
+        )))
+        parseValueExpression("(.x, .y(.z,),)") should be (NamedValuePackExpressionNoInline(Map(
+          valName("x") -> localVal("x"),
+          valName("y") -> InlineNamedValuePack(valName("z"), localVal("z")),
         )))
       }
     }
