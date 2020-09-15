@@ -44,6 +44,14 @@ class ParserSpec extends FreeSpec with Matchers {
   def typeGroup(inner: TypeComponent) = GroupingForType(inner)
   def valGroup(inner: ValueComponent) = GroupingForValue(inner)
 
+  def catchParsingError[T](text: String)(f: => T) = {
+    // TODO: make this exception type better!!!
+    val caught = intercept[Exception] {
+      f
+    }
+    assert(caught.getMessage.contains(text))
+  }
+
   "FunnelPEG" - {
     "when parsing non-packed expressions" - {
       "should correctly parse literals" in {
@@ -54,31 +62,69 @@ class ParserSpec extends FreeSpec with Matchers {
       }
       "should correctly parse references to global variables" in {
         parseTypeExpression("$G") should be (globalType("G"))
+        parseTypeExpression("$G-a9a_ssdf") should be (globalType("G-a9a_ssdf"))
         parseValueExpression("$g") should be (globalValue("g"))
+        parseValueExpression("$gG-a9a_ssdf") should be (globalValue("gG-a9a_ssdf"))
+      }
+      "should correctly parse references to local variables" in {
+        parseTypeExpression(".Y") should be (localType("Y"))
+        parseTypeExpression(".YG-a9a_ssdf") should be (localType("YG-a9a_ssdf"))
+        parseValueExpression(".x") should be (localVal("x"))
+        parseValueExpression(".xG-a9a_ssdf") should be (localVal("xG-a9a_ssdf"))
       }
     }
     "when parsing packed expressions" - {
+      "should correctly parse inline positional packs" in {
+        catchParsingError("a trailing comma is not allowed in the definition section of an inline curry positional type pack") {
+          parseTypeExpression("[.F,]")
+        }
+        catchParsingError("a trailing comma is not allowed in the definition section of an inline curry positional type pack") {
+          parseTypeExpression("[.F,],")
+        }
+        parseTypeExpression("[.F],") should be (InlinePositionalTypePack(localType("F")))
+        catchParsingError("a trailing comma is not allowed in the definition section of an inline curry positional value pack") {
+          parseValueExpression("(.x,)")
+        }
+        catchParsingError("a trailing comma is not allowed in the definition section of an inline curry positional value pack") {
+          parseValueExpression("(.x,),")
+        }
+        parseValueExpression("(.x),") should be (InlinePositionalValuePack(localVal("x")))
+      }
       "should correctly parse positional packs" in {
-        parseTypeExpression("[$F, $G]") should be (PositionalTypePackExpression(Seq(
+        parseTypeExpression("[$F, $G]") should be (PositionalTypePackExpressionNoInline(Seq(
           globalType("F"), globalType("G")
         )))
-        parseTypeExpression("[$F,]") should be (PositionalTypePackExpression(Seq(
-          globalType("F"))))
-        parseValueExpression("(2, 0.1,)") should be (PositionalValuePackExpression(Seq(
+        parseTypeExpression("[$F]") should be (typeGroup(globalType("F")))
+        // parseTypeExpression("[.T,]") should be (PositionalTypePackExpressionNoInline(Seq(
+        //   localType("T")
+        // )))
+        parseTypeExpression("[.T],") should be (InlinePositionalTypePack(localType("T")))
+        parseTypeExpression("[.T,],") should be (PositionalTypePackExpressionNoInline(Seq(
+          InlineNamedTypePack(
+            name = typeName("T"),
+            value = localType("T"))
+        )))
+        parseValueExpression("(2, 0.1,)") should be (PositionalValuePackExpressionNoInline(Seq(
           IntegerLiteral(2), FloatLiteral(0.1),
         )))
-        parseValueExpression("(3, )") should be (PositionalValuePackExpression(Seq(
+        parseValueExpression("(3, )") should be (PositionalValuePackExpressionNoInline(Seq(
           IntegerLiteral(3))))
+        parseTypeExpression("(.x),") should be (InlinePositionalValuePack(localVal("x")))
       }
       "should correctly parse inline named packs" in {
         parseTypeExpression(".T,") should be (InlineNamedTypePack(
           name = typeName("T"),
           value = localType("T")))
+        parseTypeExpression(".T[],") should be (InlineNamedTypePack(
+          name = typeName("T"),
+          value = localType("T")))
+        parseTypeExpression("[.T,]") should be (typeGroup(InlineNamedTypePack(
+          name = typeName("T"),
+          value = localType("T"))))
         parseTypeExpression(".T[$Y],") should be (InlineNamedTypePack(
           name = typeName("T"),
           value = globalType("Y"),
         ))
-        // TODO: make this exception type better?
         // Note that this fails, while [$Y, ] works, because that is a positional parameter
         // pack. The intent of explicitly failing for trailing commas is to avoid any confusion
         // about whether the grouped type/value is a parameter pack (and therefore an inline
@@ -92,6 +138,10 @@ class ParserSpec extends FreeSpec with Matchers {
           name = valName("x"),
           value = localVal("x"),
         ))
+        parseValueExpression(".x(),") should be (InlineNamedValuePack(
+          name = valName("x"),
+          value = localVal("x"),
+        ))
         parseValueExpression(".x(3),") should be (InlineNamedValuePack(
           name = valName("x"),
           value = IntegerLiteral(3),
@@ -101,6 +151,9 @@ class ParserSpec extends FreeSpec with Matchers {
         }
         assert(caughtValueGroup.getMessage
           .contains("a trailing comma is not allowed in the definition section of a named value pack"))
+        parseValueExpression("[.x,]") should be (PositionalValuePackExpressionNoInline(Seq(
+          localVal("x")
+        )))
       }
       "should correctly parse non-inline named packs" in {
         parseTypeExpression("[.T, .X[.Y]]") should be (NamedTypePackExpressionNoInline(Map(
@@ -119,6 +172,11 @@ class ParserSpec extends FreeSpec with Matchers {
           valName("x") -> localVal("x"),
           valName("y") -> InlineNamedValuePack(valName("z"), localVal("z")),
         )))
+      }
+      "should correctly parse inline curried packs" in {
+        parseTypeExpression(".T,...") should be (InlineCurryNamedTypePack(typeName("T"), localType("T")))
+        parseTypeExpression(".T[],...") should be (InlineCurryNamedTypePack(typeName("T"), localType("T")))
+        // parseTypeExpression("[.T],...") should be (InlineCurryPositionalTypePack(localType("T")))
       }
     }
 
