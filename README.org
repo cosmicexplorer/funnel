@@ -28,6 +28,16 @@ https://eed3si9n.com/cached-compilation-for-sbt
 *** Cacheable, Serializable Process Executions
 Pants, bazel, and other projects have been continuously collaborating on an [[https://github.com/bazelbuild/remote-apis][extensible shared format for specifying a process execution request]]. This is used in pants and bazel today to execute processes that create files for build tasks. As a testament to its reproducibility, multiple organizations rely on this API to homogenously execute the same processes remotely, or to pull down a cached result of the same process execution (e.g. with a backend like [[https://github.com/twitter/scoot][Scoot]].
 
+
+**** Exposing Virtualized Process Executions as a Shell
+*VERY IMPORTANT!!!*
+/We should be able to parse bash/zsh completion scripts in order to produce a form of these idempotent ~Process~ execution requests, and *very* performantly execute them against a VFS./
+
+- This capitalizes on the existing utility of ~process_executor~, with a natural shell syntax.
+- This allows arbitrary other tools to very performantly execute processes /against/ a remote backend, or /as/ a remote backend due to the improved performance thanks to the VFS.
+- This should expose a ~upc~-like API in which processes can transparently share memory blobs and directory structures locally or remotely.
+  - *This could be the FFI to end all FFIs.*
+
 -----------
 
 A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts.
