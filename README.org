@@ -1,4 +1,5 @@
 #+TITLE: funnel
+#+STARTUP: showall
 
 /The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting./
 
@@ -6,7 +7,7 @@
 1. Consider the extremely thoughtful and natural API of the [[https://ammonite.io/#Ammonite-REPL][ammonite REPL]].
   - Unlike other shell-like environments, Ammonite has the type safety and well-documented standard library of Scala built-in.
 2.
-3. Finally, building on ~upc~, consider how performance analysis and benchmarking can change overnight if/when it's not only possible to /trace/ filesystem and network I/O vs RAM pressure vs CPU, but to *directly orchestrate it*.
+3. Finally, building on ~upc~, consider how performance analysis and benchmarking can change overnight if/when it's not only possible to /trace/ filesystem and network I/O vs RAM pressure vs CPU, but to *directly /orchestrate/ it*.
   - In particular, the [[https://github.com/pantsbuild/pants][pants]] project is developing a method for invoking arbitrary subprocesses (typically compilers/etc) within a virtual filesystem with [[https://github.com/pantsbuild/pants/tree/master/src/rust/engine/fs/brfs][~brfs~]].
 
 2. Consider the expected/proposed/conjectured utility of a generic process execution engine in [[https://github.com/cosmicexplorer/upc][~upc~]].
@@ -29,14 +30,21 @@ https://eed3si9n.com/cached-compilation-for-sbt
 Pants, bazel, and other projects have been continuously collaborating on an [[https://github.com/bazelbuild/remote-apis][extensible shared format for specifying a process execution request]]. This is used in pants and bazel today to execute processes that create files for build tasks. As a testament to its reproducibility, multiple organizations rely on this API to homogenously execute the same processes remotely, or to pull down a cached result of the same process execution (e.g. with a backend like [[https://github.com/twitter/scoot][Scoot]].
 
 
-**** Exposing Virtualized Process Executions as a Shell
-*VERY IMPORTANT!!!*
-/We should be able to parse bash/zsh completion scripts in order to produce a form of these idempotent ~Process~ execution requests, and *very* performantly execute them against a VFS./
+**** Type Safety and Performance by Omniscience
+Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) should accomplish two goals:
+1. We can validate the types of arguments /before/ running the script at all.
+   - This should improve type safety automatically, in a way that can be run on the script /before executing it at all/.
+     - /TODO: can shellcheck do this already?/
+   - It should be relatively easy to write "stubs" [[https://mypy.readthedocs.io/en/stable/stubs.html][(like mypy)]] which can fill in the blanks for hand-written scripts.
+     - /TODO: This would be an extremely natural place to start eventually developing a more thorough type inference system for shell scripts in general!/
+2. We should be able to produce, from such bash/zsh completion scripts, a form of these idempotent bazel remexec API-compatible ~Process~ execution requests, and *very* performantly execute them against a VFS.
 
+/Benefits:/
 - This capitalizes on the existing utility of ~process_executor~, with a natural shell syntax.
 - This allows arbitrary other tools to very performantly execute processes /against/ a remote backend, or /as/ a remote backend due to the improved performance thanks to the VFS.
 - This should expose a ~upc~-like API in which processes can transparently share memory blobs and directory structures locally or remotely.
   - *This could be the FFI to end all FFIs.*
+
 
 -----------
 
