@@ -1,20 +1,32 @@
 #+TITLE: funnel
-#+STARTUP: showall
 
-/The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting./
+The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting.
+
+This currently has a few separate angles:
+1. [[file:README.org::#ASpecificLanguage][An effect-based type system which is trained upon ~--help~ output and/or shell completion scripts.]]
+   - for easier expression of parallelism through laziness.
+2. [[file:README.org::#VirtualEnvironment][A virtualized filesystem and process execution environment.]]
+   - to convert the knowledge of that type system directly into unheard-of performance.
+   - to [[file:README.org::*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]].
+3. [[file:README.org::#RechargableBatteriesIncluded][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
+   - very strongly influenced by [[file:README.org::#Ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
 
 * Argument for a Much More Virtual Environment
-1. Consider the extremely thoughtful and natural API of the [[https://ammonite.io/#Ammonite-REPL][ammonite REPL]].
-  - Unlike other shell-like environments, Ammonite has the type safety and well-documented standard library of Scala built-in.
-2.
-3. Finally, building on ~upc~, consider how performance analysis and benchmarking can change overnight if/when it's not only possible to /trace/ filesystem and network I/O vs RAM pressure vs CPU, but to *directly /orchestrate/ it*.
-  - In particular, the [[https://github.com/pantsbuild/pants][pants]] project is developing a method for invoking arbitrary subprocesses (typically compilers/etc) within a virtual filesystem with [[https://github.com/pantsbuild/pants/tree/master/src/rust/engine/fs/brfs][~brfs~]].
+  :PROPERTIES:
+  :CUSTOM_ID: VirtualEnvironment
+  :END:
 
+1. Building on ~upc~, consider how performance analysis and benchmarking can change overnight if/when it's not only possible to /trace/ filesystem and network I/O vs RAM pressure vs CPU, but to *directly /orchestrate/ it*.
+  - In particular, the [[https://github.com/pantsbuild/pants][pants]] project is developing a method for invoking arbitrary subprocesses (typically compilers/etc) within a virtual filesystem with [[https://github.com/pantsbuild/pants/tree/master/src/rust/engine/fs/brfs][~brfs~]].
 2. Consider the expected/proposed/conjectured utility of a generic process execution engine in [[https://github.com/cosmicexplorer/upc][~upc~]].
   - ~upc~ was built on top of years of work to extract the process execution itself from the rest of the build tool, which has resulted in the fantastic [[https://github.com/pantsbuild/pants/blob/master/src/rust/engine/process_executor/src/main.rs][~process_executor~]] debugging tool.
 
 
 ** Breaking the Speed of Light by Being Omniscient
+   :PROPERTIES:
+   :CUSTOM_ID: SpeedOfLight
+   :END:
+
 A virtual file system using FUSE doesn't incur too much overhead on Linux /[citation needed]/. However, a filesystem, by construction, can only use heuristics to optimize its performance (and that "performance" has /many/ axes). *What if we could know /~exactly/ which files were about to be read/written at all times?*
 
 - If we knew every file that was going to be written by a process beforehand, we could allocate self-growing buffers for each of those paths, avoiding the need to allocate any resources in real time.
@@ -27,10 +39,18 @@ https://eed3si9n.com/cached-compilation-for-sbt
 *If this omniscience was achievable, we could expect our processes to run "faster than the speed of light", i.e. faster than any conceivable heuristic model.*
 
 *** Cacheable, Serializable Process Executions
+    :PROPERTIES:
+    :CUSTOM_ID: CacheableExecutions
+    :END:
+
 Pants, bazel, and other projects have been continuously collaborating on an [[https://github.com/bazelbuild/remote-apis][extensible shared format for specifying a process execution request]]. This is used in pants and bazel today to execute processes that create files for build tasks. As a testament to its reproducibility, multiple organizations rely on this API to homogenously execute the same processes remotely, or to pull down a cached result of the same process execution (e.g. with a backend like [[https://github.com/twitter/scoot][Scoot]].
 
 
 **** Type Safety and Performance by Omniscience
+     :PROPERTIES:
+     :CUSTOM_ID: TypeSafetyFromHelpText
+     :END:
+
 Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) should accomplish two goals:
 1. We can validate the types of arguments /before/ running the script at all.
    - This should improve type safety automatically, in a way that can be run on the script /before executing it at all/.
@@ -54,15 +74,95 @@ Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) shoul
   - are intended to plug into a build tool.
 - *Output streaming can be safely delegated to ~learning-progress-bar~, while this one focuses much more on one-shot executions.*
 
------------
+*** Motivating Example: the [[https:github.com/undercasetype/Fraunces][Fraunces]] open-source [[https://v-fonts.com/][variable font]]
+[[https://github.com/cosmicexplorer/Fraunces/blob/56a435d9ddd4ea6e627b282fb6e4c7b8a6f8f561/sources/build.sh#L28-L71][See this highly commented code from my attempt to fix the larger issues with the build system for the /Fraunces/ family of open-source variable fonts.]]
 
-A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts.
+#+NAME: asdf
+#+BEGIN_SRC sh :results silent :exports code :dir ~/font-sources/Fraunces/
+#!/bin/sh
+set -euxo pipefail
 
-* Getting Started
+# Ensure this script is executed from within its own directory.
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+cd "${GIT_ROOT}/sources"
 
-*Doesn't work yet -- see [TODO](#TODO)!*
+# Only use this when necessary, are currently not all instances are defined in the VF designspace
+# files.  generate static designspace referencing csv and variable designspace file later, this
+# might not be done dynamically
+# python ../mastering/scripts/generate_static_fonts_designspace.py
 
-* Motivation
+
+## Statics
+static_fonts=(
+  # 3 arguments per line.
+  Roman/Fraunces_static.designspace ttf ../fonts/static/ttf
+  Roman/Fraunces_static.designspace otf ../fonts/static/otf/
+  Italic/FrauncesItalic_static.designspace ttf ../fonts/static/ttf/
+  Italic/FrauncesItalic_static.designspace otf ../fonts/static/otf/
+)
+function get_static_instances_from_designspaces {
+  ./extract_instances.sh {Roman,Italic}/*_static.designspace
+}
+
+
+# FIXME: This is a REALLY FANTASTIC CASE where shell scripting is EXCEEDINGLY difficult to work
+# with, but JUST AS BAD AS THE PYTHON CODE IN fixNameTable.py and friends!!!! This is a *use case*!!
+# NB: Especially take note of:
+# (1) The hacky progress bar
+# (2) The `stdbuf` unbuffering
+# (3) The partial output redirection!
+# (4) Being unable to use `xargs` or `parallel` with shell functions means recreating these
+#     ".../*_static.designspace" globs in get_static_instances_from_designspaces()!
+
+# NB: Looking to address all of the above with https://github.com/cosmicexplorer/funnel
+
+function generate_static_fonts {
+  # This is really quick to calculate, and lets us know how much progress we're making!
+  total_num_static_instances="$(get_static_instances_from_designspaces | wc -l)"
+  echo "Generating Static fonts ($total_num_static_instances in total)"
+
+  # (1) Process each .designspace XML file and output format in parallel with `xargs`.
+  # (2) At this point, we're dealing with a ton of output, so we tee it to stderr so the user can
+  #     redirect to /dev/null if they don't need that finer-grained info.
+  # (3) However on stdout, we filter for messages that describe successfully writing out a .otf or
+  #     .ttf file, and give a quick progress bar with percentage, since we know how *many* instances
+  #     we'll eventually need to write, even if we're not checking which exact ones those are.
+  instances_processed=0
+  printf '%s\n' "${static_fonts[@]}" \
+    | 2>&1 stdbuf -i0 -o0 -e0 xargs -t -L 3 --max-procs=0 ./generate_font_instances.sh \
+    | stdbuf -i0 -o0 -eL tee /dev/stderr \
+    | sed -Ene 's#^INFO:fontmake.font_project:Saving (.*)$#\1#gp' \
+    | while read just_saved_font; do
+    instances_processed="$(($instances_processed + 1))"
+    percent_complete="$((($instances_processed / $total_num_static_instances) / 100.0))"
+    echo "${percent_complete}% complete: ${instances_processed}/${total_num_static_instances} (${just_saved_font})"
+  done
+}
+
+time generate_static_fonts
+exit 0
+
+echo "Post processing"
+
+gftools fix-dsig -a ../fonts/static/ttf/*.ttf
+gftools fix-hinting ../fonts/static/ttf/*.ttf
+# NB: This script appears to be doing something incredibly complex that it absolutely should not be
+# attempting to do on its own.
+python ../mastering/scripts/fixNameTable.py ../fonts/static/ttf/*.ttf
+#+END_SRC
+
+To really underline why there's such a searing need here, the build system isn't even attempting to do anything /too/ difficult with the font variability itself! It's simply trying to convert its design into something that works canonically with existing font file formats! And the tools are there -- **but not in a way that lets just anyone go off and start preparing their own font!!!**
+
+**** What Does This Enable?
+
+Beatriz Lozano was able to create [[https://beatrizl.com/project/ancho][the beautiful and extremely unconventional Ancho font]]. Regardless of the thoughts about sheer runtime performance above, I want more fonts like this one.
+
+* Motivation for Changes to the Language Itself
+  :PROPERTIES:
+  :CUSTOM_ID: ASpecificLanguage
+  :END:
+
+/A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts./
 
 The project owes immense inspiration to [CoffeeScript](https://coffeescript.org), which demonstrated it was possible to write more-complex code with an extended feature set and still work in all browser environments through transpilation, which then inspired the incorporation of those exact features into JavaScript at large.
 
@@ -84,9 +184,11 @@ While ShellCheck *can* capture pitfalls and style errors, it seems that the numb
 
 One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [CoffeeScript](https://coffeescript.org), for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [Prelude / Runtime](#prelude--runtime)). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [gnu parallel](https://www.gnu.org/software/parallel) (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
 
+These portable tools can be said to provide an /unmatched/ level of /type safety/ as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[#TypeSafetyFromHelpText][infer a real form of type safety from the help text and/or shell completions]].
+
 Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
 
-* Goals
+* TODO Goals
 Provide a shell scripting interface which:
 - [ ] transpiles to highly portable bash.
 - [ ] ensures modern shell builtins such as ~readarray~ can be invoked, using polyfills if necessary.
@@ -103,7 +205,20 @@ These shouldn't be considered right now:
 - runtime performance.
 - worrying about compatibility with older bash versions.
 
-* TODO
+** TODO A Toolchain to Parallel the Python Stdlib
+   :PROPERTIES:
+   :CUSTOM_ID: RechargableBatteriesIncluded
+   :END:
+
+*** Becoming Ammonite
+    :PROPERTIES:
+    :CUSTOM_ID: Ammonition
+    :END:
+
+Consider the extremely thoughtful and natural API of the [[https://ammonite.io/#Ammonite-REPL][ammonite REPL]].
+  - Unlike other shell-like environments, Ammonite has the type safety and well-documented standard library of Scala built-in.
+
+*** TODO Becoming Ourselves
 Right now, the "funnel" language's functionality will be exposed through a single executable ~fun~.
 - [ ] define command-line tools to control (such as ~sed~, ~parallel~, ~jq~, ~xmlstarlet~), and create a method to download them on all supported platforms.
 - [ ] define "all supported platforms".
@@ -120,7 +235,7 @@ Right now, the "funnel" language's functionality will be exposed through a singl
         them to load something from the module system with similar ease!
 - [ ] consider using any relevant parts of [shellcheck](https://github.com/koalaman/shellcheck)!!
 
-* Language Modes
+* Open Questions
 ** GNU / BSD options
 Whether to accept command lines using GNU-style (probably long) options, or BSD options (with
 different names and some missing functionality).
@@ -129,8 +244,8 @@ different names and some missing functionality).
 Whether to generate code for bash or for zsh. **The output of this compiler should be 100%
 compatible with code written for the output shell.**
 
-* Code Generation
-** Prelude / Runtime
+** Code Generation
+*** Prelude / Runtime
 The output of a compile should have some "prelude" or "runtime" which is some script to be evaluated
 containing e.g. convenience methods.
 
