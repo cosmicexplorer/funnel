@@ -46,6 +46,14 @@ Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) shoul
   - *This could be the FFI to end all FFIs.*
 
 
+** Subsume ~learning-progress-bar~
+
+- While this project focuses on making process executions *type-safe, cacheable, and extremely fast* /(static)/, the [[https:github.com/cosmicexplorer/learning-progress-bar][~learning-progress-bar~]] project is more focused on *tracing what happens /during/ an execution* /(dynamic)/.
+- *Both* projects:
+  - focus on "dropping in" to existing command-line invocations and tooling people have already set up,
+  - are intended to plug into a build tool.
+- *Output streaming can be safely delegated to ~learning-progress-bar~, while this one focuses much more on one-shot executions.*
+
 -----------
 
 A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts.
