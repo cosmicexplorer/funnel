@@ -1,17 +1,34 @@
 #+TITLE: funnel
+#+TAGS: [ enablinganyone : workingwithothers avoidingpitfalls codingbyyourself batteriesincluded ]
+#+TAGS: [ stateoftheart : makingionatural leaningonpowerfultools performance tracing typesafety ]
+#+TAGS: [ makingionatural : usingdistributedmemory avoidingpitfalls ]
+#+TAGS: [ avoidingpitfalls : variablescurrentlyarebad ]
+#+TAGS: [ canonicalsolutionstohardproblems : batteriesincluded ]
+#+TAGS: [ makingionatural : canonicalsolutionstohardproblems ]
+#+TAGS: [ tracing : trackingdistributedmemory streamingbuffercontrol makingioaneffect ]
+#+TAGS: [ virtualization : filesystem processexecution usingdistributedmemory ]
+#+TAGS: [ performance : virtualization ]
+#+TAGS: [ typesafety : shellcompletionscripts parsehelptext canonicalso[lutionstohardproblems ]
+
+#+TODO: UNCLEAR RESEARCH PLAUSIBLE PROOFOFCONCEPT FEASIBLE MAINTAINABLE | TODO DONE
+
+* RESEARCH Overview [0%]
 
 The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting.
 
 This currently has a few separate angles:
-1. [[file:README.org::#ASpecificLanguage][An effect-based type system which is trained upon ~--help~ output and/or shell completion scripts.]]
-   - for easier expression of parallelism through laziness.
-2. [[file:README.org::#VirtualEnvironment][A virtualized filesystem and process execution environment.]]
-   - to convert the knowledge of that type system directly into unheard-of performance.
-   - to [[file:README.org::*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]].
-3. [[file:README.org::#RechargableBatteriesIncluded][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
-   - very strongly influenced by [[file:README.org::#Ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
+1. [ ] [[file:README.org::#ASpecificLanguage][An effect-based type system which is trained upon ~--help~ output and/or shell completion scripts.]]
+   - [ ] for easier expression of parallelism through laziness.
+   - [ ] for [[statically-known][/much/ stronger typing guarantees]] than are available in other languages that don't have such fine understanding of I/O.
+2. [ ] [[file:README.org::#VirtualEnvironment][A virtualized filesystem and process execution environment.]]
+   - [ ] to convert the knowledge of that type system directly into unheard-of performance.
+   - [ ] to [[file:README.org::*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]].
+   - [ ] ...and [[dropping-in][this should all "just work" on everyone's existing code]] without too many changes!
+3. [ ] [[file:README.org::#RechargableBatteriesIncluded][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
+   - [ ] very strongly influenced by [[file:README.org::#Ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
+   - [ ] /most/ importantly, [[dynamic-io-control][I/O /must/ not be arbitrarily buffered by the programming language]]. **Ideas of input and output of processes should be thrown in the gutter.**
 
-* Argument for a Much More Virtual Environment
+* Argument for a Much More Virtual Environment    :trackingdistributedmemory:
   :PROPERTIES:
   :CUSTOM_ID: VirtualEnvironment
   :END:
@@ -22,7 +39,7 @@ This currently has a few separate angles:
   - ~upc~ was built on top of years of work to extract the process execution itself from the rest of the build tool, which has resulted in the fantastic [[https://github.com/pantsbuild/pants/blob/master/src/rust/engine/process_executor/src/main.rs][~process_executor~]] debugging tool.
 
 
-** Breaking the Speed of Light by Being Omniscient
+** RESEARCH Breaking the Speed of Light by Being Omniscient :filesystem:usingdistributedmemory:
    :PROPERTIES:
    :CUSTOM_ID: SpeedOfLight
    :END:
@@ -38,7 +55,7 @@ A virtual file system using FUSE doesn't incur too much overhead on Linux /[cita
 https://eed3si9n.com/cached-compilation-for-sbt
 *If this omniscience was achievable, we could expect our processes to run "faster than the speed of light", i.e. faster than any conceivable heuristic model.*
 
-*** Cacheable, Serializable Process Executions
+** MAINTAINABLE Cacheable, Serializable Process Executions :processexecution:
     :PROPERTIES:
     :CUSTOM_ID: CacheableExecutions
     :END:
@@ -46,18 +63,18 @@ https://eed3si9n.com/cached-compilation-for-sbt
 Pants, bazel, and other projects have been continuously collaborating on an [[https://github.com/bazelbuild/remote-apis][extensible shared format for specifying a process execution request]]. This is used in pants and bazel today to execute processes that create files for build tasks. As a testament to its reproducibility, multiple organizations rely on this API to homogenously execute the same processes remotely, or to pull down a cached result of the same process execution (e.g. with a backend like [[https://github.com/twitter/scoot][Scoot]].
 
 
-**** Type Safety and Performance by Omniscience
+*** RESEARCH Type Safety and Performance by Omniscience [0%] :shellcompletionscripts:parsehelptext:
      :PROPERTIES:
      :CUSTOM_ID: TypeSafetyFromHelpText
      :END:
 
 Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) should accomplish two goals:
-1. We can validate the types of arguments /before/ running the script at all.
-   - This should improve type safety automatically, in a way that can be run on the script /before executing it at all/.
-     - /TODO: can shellcheck do this already?/
-   - It should be relatively easy to write "stubs" [[https://mypy.readthedocs.io/en/stable/stubs.html][(like mypy)]] which can fill in the blanks for hand-written scripts.
-     - /TODO: This would be an extremely natural place to start eventually developing a more thorough type inference system for shell scripts in general!/
-2. We should be able to produce, from such bash/zsh completion scripts, a form of these idempotent bazel remexec API-compatible ~Process~ execution requests, and *very* performantly execute them against a VFS.
+1. [ ] We can validate the types of arguments /before/ running the script at all.
+   - [ ] This should improve type safety automatically, in a way that can be run on the script /before executing it at all/.
+     - [ ] can shellcheck do this already?
+   - [ ] It should be relatively easy to write "stubs" [[https://mypy.readthedocs.io/en/stable/stubs.html][(like mypy)]] which can fill in the blanks for hand-written scripts. <<mypy-stubs>>
+   - [ ] This would be an extremely natural place to start eventually developing a more thorough type inference system for shell scripts in general!
+2. [ ] We should be able to produce, from such bash/zsh completion scripts, a form of these idempotent bazel remexec API-compatible ~Process~ execution requests, and *very* performantly execute them against a VFS.
 
 /Benefits:/
 - This capitalizes on the existing utility of ~process_executor~, with a natural shell syntax.
@@ -66,15 +83,17 @@ Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) shoul
   - *This could be the FFI to end all FFIs.*
 
 
-** Subsume ~learning-progress-bar~
+** PLAUSIBLE Subsume ~learning-progress-bar~         :streamingbuffercontrol:
 
-- While this project focuses on making process executions *type-safe, cacheable, and extremely fast* /(static)/, the [[https:github.com/cosmicexplorer/learning-progress-bar][~learning-progress-bar~]] project is more focused on *tracing what happens /during/ an execution* /(dynamic)/.
+- While this project focuses on making process executions *type-safe, cacheable, and extremely fast* (<<statically-known>>), the [[https:github.com/cosmicexplorer/learning-progress-bar][~learning-progress-bar~]] project is more focused on *tracing what happens /during/ an execution* <<dynamic-io-control>>.
 - *Both* projects:
-  - focus on "dropping in" to existing command-line invocations and tooling people have already set up,
+  - focus on "dropping in" to existing command-line invocations and tooling people have already set up (<<dropping-in>>),
   - are intended to plug into a build tool.
 - *Output streaming can be safely delegated to ~learning-progress-bar~, while this one focuses much more on one-shot executions.*
 
-*** Motivating Example: the [[https:github.com/undercasetype/Fraunces][Fraunces]] open-source [[https://v-fonts.com/][variable font]]
+/I don't think anyone at all has been thinking about [[dynamic-io-control]] yet./ *!!*
+
+*** Motivating Example: the [[https:github.com/undercasetype/Fraunces][Fraunces]] open-source [[https://v-fonts.com/][variable font]] :codingbyyourself:parsehelptext:variablescurrentlyarebad:
 [[https://github.com/cosmicexplorer/Fraunces/blob/56a435d9ddd4ea6e627b282fb6e4c7b8a6f8f561/sources/build.sh#L28-L71][See this highly commented code from my attempt to fix the larger issues with the build system for the /Fraunces/ family of open-source variable fonts.]]
 
 #+NAME: asdf
@@ -153,7 +172,7 @@ python ../mastering/scripts/fixNameTable.py ../fonts/static/ttf/*.ttf
 
 To really underline why there's such a searing need here, the build system isn't even attempting to do anything /too/ difficult with the font variability itself! It's simply trying to convert its design into something that works canonically with existing font file formats! And the tools are there -- **but not in a way that lets just anyone go off and start preparing their own font!!!**
 
-**** What Does This Enable?
+**** What Does This Enable?                                :codingbyyourself:
 
 Beatriz Lozano was able to create [[https://beatrizl.com/project/ancho][the beautiful and extremely unconventional Ancho font]]. Regardless of the thoughts about sheer runtime performance above, I want more fonts like this one.
 
@@ -166,21 +185,21 @@ Beatriz Lozano was able to create [[https://beatrizl.com/project/ancho][the beau
 
 The project owes immense inspiration to [CoffeeScript](https://coffeescript.org), which demonstrated it was possible to write more-complex code with an extended feature set and still work in all browser environments through transpilation, which then inspired the incorporation of those exact features into JavaScript at large.
 
-** Bash Splintering
+** RESEARCH Bash Splintering                              :workingwithothers:
 
-It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only because bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4](https://apple.stackexchange.com/a/197172). This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
+It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4](https://apple.stackexchange.com/a/197172). This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
 
-** Toolchain Bootstrapping
+** PLAUSIBLE Toolchain Bootstrapping     :avoidingpitfalls:workingwithothers:
 
 The more obvious error and detriment to portable bash scripting is simply not having the desired tools. For tools that users may have installed by default, there are still e.g. incompatibilities for macOS again (such as ~sed~ not accepting the ~-r~ flag). In general, though, versions of many shell tools may also be splintered across Linux distributions, depending on how often distributions update their toolchains and how often users upgrade their OS. This can lead to a tradeoff that developers make between maintaining a complete toolchain on all shell environments, and writing lowest-common-denominator bash again, without being able to use tools such as ~sed~ or ~grep~ as expected.
 
-** Avoiding Bash Pitfalls
+** PLAUSIBLE Avoiding Bash Pitfalls                        :avoidingpitfalls:
 
 Separate from toolchains, many bash semantics can tend to confuse users, even experienced ones. Last week I learned that ~set -e~ doesn't exit on a failed command if it's within the body of a ~function~! Many other shells such as [zsh](https://zsh.sourceforge.net) fix issues with e.g. variable declarations, but those other shells are even less likely to be installed by default. [ShellCheck](https://www.shellcheck.net) is often used in codebases to avoid these pitfalls, but custom checks may still have to be written -- the [pants](https://pantsbuild.org) repo required this separate [check for broken ~readonly~ statements which don't cause ~set -e~ to fail](https://github.com/pantsbuild/pants/blob/4a19087e42ff05608a997b3b5f372420eaaeeb33/build-support/bin/check_shell.sh#L2). This checking requires effort to maintain and still may be incomplete.
 
 While ShellCheck *can* capture pitfalls and style errors, it seems that the number of pitfalls is so great that we might consider looking at a whitelisting approach instead -- not allowing these pitfalls to be expressable at all, perhaps by writing a new language, which transpiles to lowest-common-denominator bash scripts!
 
-** Extending the Language
+** RESEARCH Extending the Language         :canonicalsolutionstohardproblems:
 
 One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [CoffeeScript](https://coffeescript.org), for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [Prelude / Runtime](#prelude--runtime)). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [gnu parallel](https://www.gnu.org/software/parallel) (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
 
@@ -188,7 +207,7 @@ These portable tools can be said to provide an /unmatched/ level of /type safety
 
 Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
 
-* TODO Goals
+* RESEARCH Goals       :workingwithothers:avoidingpitfalls:batteriesincluded:
 Provide a shell scripting interface which:
 - [ ] transpiles to highly portable bash.
 - [ ] ensures modern shell builtins such as ~readarray~ can be invoked, using polyfills if necessary.
@@ -202,15 +221,14 @@ Provide a shell scripting interface which:
 
 ** Non-Goals
 These shouldn't be considered right now:
-- runtime performance.
-- worrying about compatibility with older bash versions.
+1. worrying about compatibility with older bash versions.
 
-** TODO A Toolchain to Parallel the Python Stdlib
+** RESEARCH A Toolchain to Parallel the Python Stdlib     :batteriesincluded:
    :PROPERTIES:
    :CUSTOM_ID: RechargableBatteriesIncluded
    :END:
 
-*** Becoming Ammonite
+*** PROOFOFCONCEPT Becoming Ammonite                        :makingionatural:
     :PROPERTIES:
     :CUSTOM_ID: Ammonition
     :END:
@@ -218,7 +236,7 @@ These shouldn't be considered right now:
 Consider the extremely thoughtful and natural API of the [[https://ammonite.io/#Ammonite-REPL][ammonite REPL]].
   - Unlike other shell-like environments, Ammonite has the type safety and well-documented standard library of Scala built-in.
 
-*** TODO Becoming Ourselves
+*** UNCLEAR Becoming Ourselves                       :leaningonpowerfultools:
 Right now, the "funnel" language's functionality will be exposed through a single executable ~fun~.
 - [ ] define command-line tools to control (such as ~sed~, ~parallel~, ~jq~, ~xmlstarlet~), and create a method to download them on all supported platforms.
 - [ ] define "all supported platforms".
@@ -235,16 +253,15 @@ Right now, the "funnel" language's functionality will be exposed through a singl
         them to load something from the module system with similar ease!
 - [ ] consider using any relevant parts of [shellcheck](https://github.com/koalaman/shellcheck)!!
 
-* Open Questions
-** GNU / BSD options
+* UNCLEAR Open Questions
+** UNCLEAR GNU / BSD options             :workingwithothers:avoidingpitfalls:
 Whether to accept command lines using GNU-style (probably long) options, or BSD options (with
 different names and some missing functionality).
-- *TODO: is this really a thing?*
-** bash / zsh output
-Whether to generate code for bash or for zsh. **The output of this compiler should be 100%
+** UNCLEAR bash / zsh output                              :workingwithothers:
+vWhether to generate code for bash or for zsh. **The output of this compiler should be 100%
 compatible with code written for the output shell.**
 
-** Code Generation
+** UNCLEAR Code Generation                 :makingionatural:codingbyyourself:
 *** Prelude / Runtime
 The output of a compile should have some "prelude" or "runtime" which is some script to be evaluated
 containing e.g. convenience methods.
