@@ -8,7 +8,7 @@
 #+TAGS: [ tracing : trackingdistributedmemory streamingbuffercontrol makingioaneffect ]
 #+TAGS: [ virtualization : filesystem processexecution usingdistributedmemory ]
 #+TAGS: [ performance : virtualization ]
-#+TAGS: [ typesafety : shellcompletionscripts parsehelptext canonicalso[lutionstohardproblems ]
+#+TAGS: [ typesafety : shellcompletionscripts parsehelptext canonicalsolutionstohardproblems ]
 
 #+TODO: UNCLEAR RESEARCH PLAUSIBLE PROOFOFCONCEPT FEASIBLE MAINTAINABLE | TODO DONE
 
@@ -17,15 +17,15 @@
 The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting.
 
 This currently has a few separate angles:
-1. [ ] [[file:README.org::#ASpecificLanguage][An effect-based type system which is trained upon ~--help~ output and/or shell completion scripts.]]
+1. [ ] [[#ASpecificLanguage][An effect-based type system which is trained upon ~--help~ output and/or shell completion scripts.]]
    - [ ] for easier expression of parallelism through laziness.
    - [ ] for [[statically-known][/much/ stronger typing guarantees]] than are available in other languages that don't have such fine understanding of I/O.
-2. [ ] [[file:README.org::#VirtualEnvironment][A virtualized filesystem and process execution environment.]]
+2. [ ] [[#VirtualEnvironment][A virtualized filesystem and process execution environment.]]
    - [ ] to convert the knowledge of that type system directly into unheard-of performance.
-   - [ ] to [[file:README.org::*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]].
+   - [ ] to [[*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]].
    - [ ] ...and [[dropping-in][this should all "just work" on everyone's existing code]] without too many changes!
-3. [ ] [[file:README.org::#RechargableBatteriesIncluded][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
-   - [ ] very strongly influenced by [[file:README.org::#Ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
+3. [ ] [[#RechargableBatteriesIncluded][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
+   - [ ] very strongly influenced by [[#Ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
    - [ ] /most/ importantly, [[dynamic-io-control][I/O /must/ not be arbitrarily buffered by the programming language]]. **Ideas of input and output of processes should be thrown in the gutter.**
 
 * Argument for a Much More Virtual Environment    :trackingdistributedmemory:
@@ -39,7 +39,7 @@ This currently has a few separate angles:
   - ~upc~ was built on top of years of work to extract the process execution itself from the rest of the build tool, which has resulted in the fantastic [[https://github.com/pantsbuild/pants/blob/master/src/rust/engine/process_executor/src/main.rs][~process_executor~]] debugging tool.
 
 
-** RESEARCH Breaking the Speed of Light by Being Omniscient :filesystem:usingdistributedmemory:
+** PLAUSIBLE Breaking the Speed of Light by Being Omniscient                                        :filesystem:usingdistributedmemory:
    :PROPERTIES:
    :CUSTOM_ID: SpeedOfLight
    :END:
@@ -183,11 +183,11 @@ Beatriz Lozano was able to create [[https://beatrizl.com/project/ancho][the beau
 
 /A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts./
 
-The project owes immense inspiration to [CoffeeScript](https://coffeescript.org), which demonstrated it was possible to write more-complex code with an extended feature set and still work in all browser environments through transpilation, which then inspired the incorporation of those exact features into JavaScript at large.
+The project owes immense inspiration to [[https://coffeescript.org][CoffeeScript]], which demonstrated it was possible to write more-complex code with an extended feature set and still work in all browser environments through transpilation, which then inspired the incorporation of those exact features into JavaScript at large.
 
 ** RESEARCH Bash Splintering                              :workingwithothers:
 
-It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4](https://apple.stackexchange.com/a/197172). This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
+It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [[https://apple.stackexchange.com/a/197172][macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4]]. This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
 
 ** PLAUSIBLE Toolchain Bootstrapping     :avoidingpitfalls:workingwithothers:
 
@@ -195,13 +195,13 @@ The more obvious error and detriment to portable bash scripting is simply not ha
 
 ** PLAUSIBLE Avoiding Bash Pitfalls                        :avoidingpitfalls:
 
-Separate from toolchains, many bash semantics can tend to confuse users, even experienced ones. Last week I learned that ~set -e~ doesn't exit on a failed command if it's within the body of a ~function~! Many other shells such as [zsh](https://zsh.sourceforge.net) fix issues with e.g. variable declarations, but those other shells are even less likely to be installed by default. [ShellCheck](https://www.shellcheck.net) is often used in codebases to avoid these pitfalls, but custom checks may still have to be written -- the [pants](https://pantsbuild.org) repo required this separate [check for broken ~readonly~ statements which don't cause ~set -e~ to fail](https://github.com/pantsbuild/pants/blob/4a19087e42ff05608a997b3b5f372420eaaeeb33/build-support/bin/check_shell.sh#L2). This checking requires effort to maintain and still may be incomplete.
+Separate from toolchains, many bash semantics can tend to confuse users, even experienced ones. Last week I learned that ~set -e~ doesn't exit on a failed command if it's within the body of a ~function~! Many other shells such as [[https://zsh.sourceforge.net][zsh]] fix issues with e.g. variable declarations, but those other shells are even less likely to be installed by default. [[https://www.shellcheck.net][ShellCheck]] is often used in codebases to avoid these pitfalls, but custom checks may still have to be written -- the [[https://pantsbuild.org][pants]] repo required this separate [[https://github.com/pantsbuild/pants/blob/4a19087e42ff05608a997b3b5f372420eaaeeb33/build-support/bin/check_shell.sh#L2][check for broken ~readonly~ statements which don't cause ~set -e~ to fail]]. This checking requires effort to maintain and still may be incomplete.
 
 While ShellCheck *can* capture pitfalls and style errors, it seems that the number of pitfalls is so great that we might consider looking at a whitelisting approach instead -- not allowing these pitfalls to be expressable at all, perhaps by writing a new language, which transpiles to lowest-common-denominator bash scripts!
 
 ** RESEARCH Extending the Language         :canonicalsolutionstohardproblems:
 
-One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [CoffeeScript](https://coffeescript.org), for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [Prelude / Runtime](#prelude--runtime)). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [gnu parallel](https://www.gnu.org/software/parallel) (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
+One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[#prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
 
 These portable tools can be said to provide an /unmatched/ level of /type safety/ as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[#TypeSafetyFromHelpText][infer a real form of type safety from the help text and/or shell completions]].
 
@@ -240,18 +240,17 @@ Consider the extremely thoughtful and natural API of the [[https://ammonite.io/#
 Right now, the "funnel" language's functionality will be exposed through a single executable ~fun~.
 - [ ] define command-line tools to control (such as ~sed~, ~parallel~, ~jq~, ~xmlstarlet~), and create a method to download them on all supported platforms.
 - [ ] define "all supported platforms".
-- [ ] define a grammar (see the [bash grammar](http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html)).
+- [ ] define a grammar (see the [[http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html][bash grammar]]).
 - [ ] implement the transpiler.
-  - [ ] figure out whether/how this language can be smart enough to bootstrap itself (i.e. the compiler is
-  written in it)
-    - **^!!!^**
+  - [ ] figure out whether/how this language can be smart enough to bootstrap itself (i.e. the compiler is written in it)
+    - *^!!!^*
   - [ ] begin to consider a module and package system for (portable) bash scripts
     - [ ] want something that will work on existing bash/zsh code (e.g. if you put them in a special
       directory they can be specially required or loaded)?
-      - the ["Prelude"/"Runtime"](#prelude--runtime) for this (the shell script code that it loads)
+      - the [[#prelude-runtime]["Prelude"/"Runtime"]] for this (the shell script code that it loads)
         should have a function that is available to bash and zsh scripts that it loads which allows
         them to load something from the module system with similar ease!
-- [ ] consider using any relevant parts of [shellcheck](https://github.com/koalaman/shellcheck)!!
+- [ ] consider using any relevant parts of [[https://github.com/koalaman/shellcheck][shellcheck]]!!
 
 * UNCLEAR Open Questions
 ** UNCLEAR GNU / BSD options             :workingwithothers:avoidingpitfalls:
@@ -263,6 +262,10 @@ compatible with code written for the output shell.**
 
 ** UNCLEAR Code Generation                 :makingionatural:codingbyyourself:
 *** Prelude / Runtime
+    :PROPERTIES:
+    :CUSTOM_ID: prelude-runtime
+    :END:
+
 The output of a compile should have some "prelude" or "runtime" which is some script to be evaluated
 containing e.g. convenience methods.
 
