@@ -38,6 +38,13 @@ This currently has a few separate angles:
 2. Consider the expected/proposed/conjectured utility of a generic process execution engine in [[https://github.com/cosmicexplorer/upc][~upc~]].
   - ~upc~ was built on top of years of work to extract the process execution itself from the rest of the build tool, which has resulted in the fantastic [[https://github.com/pantsbuild/pants/blob/master/src/rust/engine/process_executor/src/main.rs][~process_executor~]] debugging tool.
 
+** MAINTAINABLE Cacheable, Serializable Process Executions :processexecution:
+    :PROPERTIES:
+    :CUSTOM_ID: CacheableExecutions
+    :END:
+
+Pants, bazel, and other projects have been continuously collaborating on an [[https://github.com/bazelbuild/remote-apis][extensible shared format for specifying a process execution request]]. This is used in pants and bazel today to execute processes that create files for build tasks. As a testament to its reproducibility, multiple organizations rely on this API to homogenously execute the same processes remotely, or to pull down a cached result of the same process execution (e.g. with a backend like [[https://github.com/twitter/scoot][Scoot]].
+
 
 ** PLAUSIBLE Breaking the Speed of Light by Being Omniscient                                        :filesystem:usingdistributedmemory:
    :PROPERTIES:
@@ -54,14 +61,6 @@ A virtual file system using FUSE doesn't incur too much overhead on Linux /[cita
 <<> eugene and zinc vfs
 https://eed3si9n.com/cached-compilation-for-sbt
 *If this omniscience was achievable, we could expect our processes to run "faster than the speed of light", i.e. faster than any conceivable heuristic model.*
-
-** MAINTAINABLE Cacheable, Serializable Process Executions :processexecution:
-    :PROPERTIES:
-    :CUSTOM_ID: CacheableExecutions
-    :END:
-
-Pants, bazel, and other projects have been continuously collaborating on an [[https://github.com/bazelbuild/remote-apis][extensible shared format for specifying a process execution request]]. This is used in pants and bazel today to execute processes that create files for build tasks. As a testament to its reproducibility, multiple organizations rely on this API to homogenously execute the same processes remotely, or to pull down a cached result of the same process execution (e.g. with a backend like [[https://github.com/twitter/scoot][Scoot]].
-
 
 *** RESEARCH Type Safety and Performance by Omniscience [0%] :shellcompletionscripts:parsehelptext:
      :PROPERTIES:
@@ -81,7 +80,6 @@ Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) shoul
 - This allows arbitrary other tools to very performantly execute processes /against/ a remote backend, or /as/ a remote backend due to the improved performance thanks to the VFS.
 - This should expose a ~upc~-like API in which processes can transparently share memory blobs and directory structures locally or remotely.
   - *This could be the FFI to end all FFIs.*
-
 
 ** PLAUSIBLE Subsume ~learning-progress-bar~         :streamingbuffercontrol:
 
@@ -175,6 +173,7 @@ To really underline why there's such a searing need here, the build system isn't
 **** What Does This Enable?                                :codingbyyourself:
 
 Beatriz Lozano was able to create [[https://beatrizl.com/project/ancho][the beautiful and extremely unconventional Ancho font]]. Regardless of the thoughts about sheer runtime performance above, I want more fonts like this one.
+
 
 * Motivation for Changes to the Language Itself
   :PROPERTIES:
