@@ -17,63 +17,55 @@
 The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting.
 
 This currently has a few separate angles:
-1. [ ] [[#ASpecificLanguage][An effect-based type system which is trained upon ~--help~ output and/or shell completion scripts.]]
+1. [ ] [[a-specific-language][An effect-based type system which is trained upon ~--help~ output and/or shell completion scripts.]]
    - [ ] for easier expression of parallelism through laziness.
    - [ ] for [[statically-known][/much/ stronger typing guarantees]] than are available in other languages that don't have such fine understanding of I/O.
-2. [ ] [[#VirtualEnvironment][A virtualized filesystem and process execution environment.]]
+2. [ ] [[virtual-environment][A virtualized filesystem and process execution environment.]]
    - [ ] to convert the knowledge of that type system directly into unheard-of performance.
    - [ ] to [[*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]].
    - [ ] ...and [[dropping-in][this should all "just work" on everyone's existing code]] without too many changes!
-3. [ ] [[#RechargableBatteriesIncluded][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
-   - [ ] very strongly influenced by [[#Ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
+3. [ ] [[rechargeable-batteries-included][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
+   - [ ] very strongly influenced by [[ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
    - [ ] /most/ importantly, [[dynamic-io-control][I/O /must/ not be arbitrarily buffered by the programming language]]. **Ideas of input and output of processes should be thrown in the gutter.**
 
-* Argument for a Much More Virtual Environment    :trackingdistributedmemory:
-  :PROPERTIES:
-  :CUSTOM_ID: VirtualEnvironment
-  :END:
+* Argument for a Much More Virtual Environment  <<virtual-environment>> :trackingdistributedmemory:
 
 1. Building on ~upc~, consider how performance analysis and benchmarking can change overnight if/when it's not only possible to /trace/ filesystem and network I/O vs RAM pressure vs CPU, but to *directly /orchestrate/ it*.
   - In particular, the [[https://github.com/pantsbuild/pants][pants]] project is developing a method for invoking arbitrary subprocesses (typically compilers/etc) within a virtual filesystem with [[https://github.com/pantsbuild/pants/tree/master/src/rust/engine/fs/brfs][~brfs~]].
 2. Consider the expected/proposed/conjectured utility of a generic process execution engine in [[https://github.com/cosmicexplorer/upc][~upc~]].
   - ~upc~ was built on top of years of work to extract the process execution itself from the rest of the build tool, which has resulted in the fantastic [[https://github.com/pantsbuild/pants/blob/master/src/rust/engine/process_executor/src/main.rs][~process_executor~]] debugging tool.
 
-** MAINTAINABLE Cacheable, Serializable Process Executions :processexecution:
-    :PROPERTIES:
-    :CUSTOM_ID: CacheableExecutions
-    :END:
+** RESEARCH [0/1] Cacheable, Serializable Process Executions <<cacheable-executions>> :processexecution:
 
 Pants, bazel, and other projects have been continuously collaborating on an [[https://github.com/bazelbuild/remote-apis][extensible shared format for specifying a process execution request]]. This is used in pants and bazel today to execute processes that create files for build tasks. As a testament to its reproducibility, multiple organizations rely on this API to homogenously execute the same processes remotely, or to pull down a cached result of the same process execution (e.g. with a backend like [[https://github.com/twitter/scoot][Scoot]].
 
+- [ ] We should be able to produce, from such bash/zsh completion scripts, a form of these idempotent bazel remexec API-compatible ~Process~ execution requests, and *very* performantly execute them against a VFS.
 
-** PLAUSIBLE Breaking the Speed of Light by Being Omniscient                                        :filesystem:usingdistributedmemory:
-   :PROPERTIES:
-   :CUSTOM_ID: SpeedOfLight
-   :END:
 
-A virtual file system using FUSE doesn't incur too much overhead on Linux /[citation needed]/. However, a filesystem, by construction, can only use heuristics to optimize its performance (and that "performance" has /many/ axes). *What if we could know /~exactly/ which files were about to be read/written at all times?*
+** PLAUSIBLE [0/3] Breaking the Speed of Light by Being Omniscient <<speed-of-light>> :filesystem:usingdistributedmemory:
 
-- If we knew every file that was going to be written by a process beforehand, we could allocate self-growing buffers for each of those paths, avoiding the need to allocate any resources in real time.
-  - If we knew the expected /size/ of those future files, we could allocate the appropriate regions immediately.
-- If we knew every file that needed to be /read/ by a process beforehand, we could allocate (perhaps even pool) read-only buffers before the process executes.
+A virtual file system using FUSE doesn't incur too much overhead on Linux /[citation needed]/. However, a filesystem, by construction, can only use heuristics to optimize its performance (and that "performance" has /many/ axes). *What if we could know /~exactly/ which files were about to be read/written at all [times?*
+
+- [ ] If we knew every file that was going to be /written/ by a process beforehand, we could allocatae self-growing buffers for each of those paths, avoiding the need to allocate any resources in real time.
+- [ ] If we knew the expected /size/ of those future files, we could allocate the appropriate regions immediately.
+- [ ] If we knew every file that needed to be /read/ by a process beforehand, we could allocate (perhaps even pool) read-only buffers before the process executes.
 
 <> fast enough IPC is just an FFI
 <<> eugene and zinc vfs
 https://eed3si9n.com/cached-compilation-for-sbt
 *If this omniscience was achievable, we could expect our processes to run "faster than the speed of light", i.e. faster than any conceivable heuristic model.*
 
-*** RESEARCH Type Safety and Performance by Omniscience [0%] :shellcompletionscripts:parsehelptext:
-     :PROPERTIES:
-     :CUSTOM_ID: TypeSafetyFromHelpText
-     :END:
+*** RESEARCH [0%]Type Safety and Performance by Omniscience <<typesafety>>:shellcompletionscripts:parsehelptext:
 
 Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) should accomplish two goals:
 1. [ ] We can validate the types of arguments /before/ running the script at all.
    - [ ] This should improve type safety automatically, in a way that can be run on the script /before executing it at all/.
      - [ ] can shellcheck do this already?
-   - [ ] It should be relatively easy to write "stubs" [[https://mypy.readthedocs.io/en/stable/stubs.html][(like mypy)]] which can fill in the blanks for hand-written scripts. <<mypy-stubs>>
+2. [ ] It should be relatively easy to write "stubs" [[https://mypy.readthedocs.io/en/stable/stubs.html][(like mypy)]] which can fill in the blanks for hand-written scripts. <<mypy-stubs>>
    - [ ] This would be an extremely natural place to start eventually developing a more thorough type inference system for shell scripts in general!
-2. [ ] We should be able to produce, from such bash/zsh completion scripts, a form of these idempotent bazel remexec API-compatible ~Process~ execution requests, and *very* performantly execute them against a VFS.
+3. [ ] This should either extend or integrate with shellcheck to provide real type safety for bash shells.
+
+Then see [[cacheable-executions][making them a virtual `Process` execution for performance!]]
 
 /Benefits:/
 - This capitalizes on the existing utility of ~process_executor~, with a natural shell syntax.
@@ -175,10 +167,7 @@ To really underline why there's such a searing need here, the build system isn't
 Beatriz Lozano was able to create [[https://beatrizl.com/project/ancho][the beautiful and extremely unconventional Ancho font]]. Regardless of the thoughts about sheer runtime performance above, I want more fonts like this one.
 
 
-* Motivation for Changes to the Language Itself
-  :PROPERTIES:
-  :CUSTOM_ID: ASpecificLanguage
-  :END:
+*  Motivation for Changes to the Language Itself <<a-specific-language>>
 
 /A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts./
 
@@ -200,9 +189,9 @@ While ShellCheck *can* capture pitfalls and style errors, it seems that the numb
 
 ** RESEARCH Extending the Language         :canonicalsolutionstohardproblems:
 
-One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[#prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
+One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
 
-These portable tools can be said to provide an /unmatched/ level of /type safety/ as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[#TypeSafetyFromHelpText][infer a real form of type safety from the help text and/or shell completions]].
+These portable tools can be said to provide an /unmatched/ level of /type safety/ as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[typesafety][infer a real form of type safety from the help text and/or shell completions]].
 
 Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
 
@@ -222,15 +211,9 @@ Provide a shell scripting interface which:
 These shouldn't be considered right now:
 1. worrying about compatibility with older bash versions.
 
-** RESEARCH A Toolchain to Parallel the Python Stdlib     :batteriesincluded:
-   :PROPERTIES:
-   :CUSTOM_ID: RechargableBatteriesIncluded
-   :END:
+** RESEARCH A Toolchain to Parallel the Python Stdlib <<rechargeable-batteries-included>> :batteriesincluded:
 
-*** PROOFOFCONCEPT Becoming Ammonite                        :makingionatural:
-    :PROPERTIES:
-    :CUSTOM_ID: Ammonition
-    :END:
+*** PROOFOFCONCEPT Becoming Ammonite <<ammonitionl>>                   :makingionatural:
 
 Consider the extremely thoughtful and natural API of the [[https://ammonite.io/#Ammonite-REPL][ammonite REPL]].
   - Unlike other shell-like environments, Ammonite has the type safety and well-documented standard library of Scala built-in.
@@ -246,7 +229,7 @@ Right now, the "funnel" language's functionality will be exposed through a singl
   - [ ] begin to consider a module and package system for (portable) bash scripts
     - [ ] want something that will work on existing bash/zsh code (e.g. if you put them in a special
       directory they can be specially required or loaded)?
-      - the [[#prelude-runtime]["Prelude"/"Runtime"]] for this (the shell script code that it loads)
+      - the [[prelude-runtime]["Prelude"/"Runtime"]] for this (the shell script code that it loads)
         should have a function that is available to bash and zsh scripts that it loads which allows
         them to load something from the module system with similar ease!
 - [ ] consider using any relevant parts of [[https://github.com/koalaman/shellcheck][shellcheck]]!!
@@ -260,10 +243,7 @@ vWhether to generate code for bash or for zsh. **The output of this compiler sho
 compatible with code written for the output shell.**
 
 ** UNCLEAR Code Generation                 :makingionatural:codingbyyourself:
-*** Prelude / Runtime
-    :PROPERTIES:
-    :CUSTOM_ID: prelude-runtime
-    :END:
+*** Prelude / Runtime <<prelude-runtime>>
 
 The output of a compile should have some "prelude" or "runtime" which is some script to be evaluated
 containing e.g. convenience methods.
