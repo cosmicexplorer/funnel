@@ -28,6 +28,34 @@ This currently has a few separate angles:
    - [ ] very strongly influenced by [[ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
    - [ ] /most/ importantly, [[dynamic-io-control][I/O /must/ not be arbitrarily buffered by the programming language]]. **Ideas of input and output of processes should be thrown in the gutter.**
 
+*  Motivation for Changes to the Language Itself <<a-specific-language>>
+
+/A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts./
+
+The project owes immense inspiration to [[https://coffeescript.org][CoffeeScript]], which demonstrated it was possible to write more-complex code with an extended feature set and still work in all browser environments through transpilation, which then inspired the incorporation of those exact features into JavaScript at large.
+
+** RESEARCH Bash Splintering                              :workingwithothers:
+
+It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [[https://apple.stackexchange.com/a/197172][macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4]]. This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
+
+** PLAUSIBLE Toolchain Bootstrapping     :avoidingpitfalls:workingwithothers:
+
+The more obvious error and detriment to portable bash scripting is simply not having the desired tools. For tools that users may have installed by default, there are still e.g. incompatibilities for macOS again (such as ~sed~ not accepting the ~-r~ flag). In general, though, versions of many shell tools may also be splintered across Linux distributions, depending on how often distributions update their toolchains and how often users upgrade their OS. This can lead to a tradeoff that developers make between maintaining a complete toolchain on all shell environments, and writing lowest-common-denominator bash again, without being able to use tools such as ~sed~ or ~grep~ as expected.
+
+** PLAUSIBLE Avoiding Bash Pitfalls                        :avoidingpitfalls:
+
+Separate from toolchains, many bash semantics can tend to confuse users, even experienced ones. Last week I learned that ~set -e~ doesn't exit on a failed command if it's within the body of a ~function~! Many other shells such as [[https://zsh.sourceforge.net][zsh]] fix issues with e.g. variable declarations, but those other shells are even less likely to be installed by default. [[https://www.shellcheck.net][ShellCheck]] is often used in codebases to avoid these pitfalls, but custom checks may still have to be written -- the [[https://pantsbuild.org][pants]] repo required this separate [[https://github.com/pantsbuild/pants/blob/4a19087e42ff05608a997b3b5f372420eaaeeb33/build-support/bin/check_shell.sh#L2][check for broken ~readonly~ statements which don't cause ~set -e~ to fail]]. This checking requires effort to maintain and still may be incomplete.
+
+While ShellCheck *can* capture pitfalls and style errors, it seems that the number of pitfalls is so great that we might consider looking at a whitelisting approach instead -- not allowing these pitfalls to be expressable at all, perhaps by writing a new language, which transpiles to lowest-common-denominator bash scripts!
+
+** RESEARCH Extending the Language         :canonicalsolutionstohardproblems:
+
+One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
+
+These portable tools can be said to provide an /unmatched/ level of /type safety/ as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[typesafety][infer a real form of type safety from the help text and/or shell completions]].
+
+Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
+
 * Argument for a Much More Virtual Environment  <<virtual-environment>> :trackingdistributedmemory:
 
 1. Building on ~upc~, consider how performance analysis and benchmarking can change overnight if/when it's not only possible to /trace/ filesystem and network I/O vs RAM pressure vs CPU, but to *directly /orchestrate/ it*.
@@ -164,36 +192,7 @@ To really underline why there's such a searing need here, the build system isn't
 
 **** What Does This Enable?                                :codingbyyourself:
 
-Beatriz Lozano was able to create [[https://beatrizl.com/project/ancho][the beautiful and extremely unconventional Ancho font]]. Regardless of the thoughts about sheer runtime performance above, I want more fonts like this one.
 
-
-*  Motivation for Changes to the Language Itself <<a-specific-language>>
-
-/A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts./
-
-The project owes immense inspiration to [[https://coffeescript.org][CoffeeScript]], which demonstrated it was possible to write more-complex code with an extended feature set and still work in all browser environments through transpilation, which then inspired the incorporation of those exact features into JavaScript at large.
-
-** RESEARCH Bash Splintering                              :workingwithothers:
-
-It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [[https://apple.stackexchange.com/a/197172][macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4]]. This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
-
-** PLAUSIBLE Toolchain Bootstrapping     :avoidingpitfalls:workingwithothers:
-
-The more obvious error and detriment to portable bash scripting is simply not having the desired tools. For tools that users may have installed by default, there are still e.g. incompatibilities for macOS again (such as ~sed~ not accepting the ~-r~ flag). In general, though, versions of many shell tools may also be splintered across Linux distributions, depending on how often distributions update their toolchains and how often users upgrade their OS. This can lead to a tradeoff that developers make between maintaining a complete toolchain on all shell environments, and writing lowest-common-denominator bash again, without being able to use tools such as ~sed~ or ~grep~ as expected.
-
-** PLAUSIBLE Avoiding Bash Pitfalls                        :avoidingpitfalls:
-
-Separate from toolchains, many bash semantics can tend to confuse users, even experienced ones. Last week I learned that ~set -e~ doesn't exit on a failed command if it's within the body of a ~function~! Many other shells such as [[https://zsh.sourceforge.net][zsh]] fix issues with e.g. variable declarations, but those other shells are even less likely to be installed by default. [[https://www.shellcheck.net][ShellCheck]] is often used in codebases to avoid these pitfalls, but custom checks may still have to be written -- the [[https://pantsbuild.org][pants]] repo required this separate [[https://github.com/pantsbuild/pants/blob/4a19087e42ff05608a997b3b5f372420eaaeeb33/build-support/bin/check_shell.sh#L2][check for broken ~readonly~ statements which don't cause ~set -e~ to fail]]. This checking requires effort to maintain and still may be incomplete.
-
-While ShellCheck *can* capture pitfalls and style errors, it seems that the number of pitfalls is so great that we might consider looking at a whitelisting approach instead -- not allowing these pitfalls to be expressable at all, perhaps by writing a new language, which transpiles to lowest-common-denominator bash scripts!
-
-** RESEARCH Extending the Language         :canonicalsolutionstohardproblems:
-
-One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
-
-These portable tools can be said to provide an /unmatched/ level of /type safety/ as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[typesafety][infer a real form of type safety from the help text and/or shell completions]].
-
-Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
 
 * RESEARCH Goals       :workingwithothers:avoidingpitfalls:batteriesincluded:
 Provide a shell scripting interface which:
