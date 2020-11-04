@@ -1,15 +1,11 @@
 #+TITLE: cli
 #+STARTUP: showall
 
-#+TODO: UNCLEAR RESEARCH PLAUSIBLE PROOFOFCONCEPT FEASIBLE MAINTAINABLE | TODO DONE
-
-* PLAUSIBLE Goals
-** RESEARCH [0/0] pants plugins with extensible options}
-1. [0/2] TODO make a pants plugin that can transmit options from pants's options.
-  - [ ] see discussion in [[https://github.com/pantsbuild/pants/issues/10885][#10885]]!
-  - [ ] see use case in [[https://github.com/pantsbuild/pants/blob/efef4c54d36e50ee2e14ad476ede8f3891dfa3f5/src/python/pants/core/util\_rules/subprocess\_environment.py\#L33-L35][the pants ~SuprocessEnvironment~/]]!
-2. [0/2] TODO extend shellcheck and/or transpile
-  - [ ] Extend the power of typing vs ~shellcheck~.
+* Goals
+** TODO [0/3] pants plugins with extensible options
+- [ ] make a pants plugin that can transmit options from pants's options.
+- [ ] see discussion in [[https://github.com/pantsbuild/pants/issues/10885][#10885]]!
+- [ ] see use case in [[https://github.com/pantsbuild/pants/blob/efef4c54d36e50ee2e14ad476ede8f3891dfa3f5/src/python/pants/core/util\_rules/subprocess\_environment.py\#L33-L35][the pants ~SuprocessEnvironment~/]]!
 
 ** CoffeeScript
 

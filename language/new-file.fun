@@ -381,6 +381,7 @@ $reduce[\.Ret, \.El] <= +(
 
 -[$boolean-and] <- [(\.x[$Boolean], \.y[$Boolean]) => $Boolean]
 
+
 -[$and] <- [(\.input[$Boolean...]) => $Boolean]
 $and <= (\.input[$Boolean...]) => $reduce(+true, .input, $boolean-and)
 # Or:

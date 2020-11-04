@@ -190,9 +190,6 @@ python ../mastering/scripts/fixNameTable.py ../fonts/static/ttf/*.ttf
 
 To really underline why there's such a searing need here, the build system isn't even attempting to do anything /too/ difficult with the font variability itself! It's simply trying to convert its design into something that works canonically with existing font file formats! And the tools are there -- **but not in a way that lets just anyone go off and start preparing their own font!!!**
 
-**** What Does This Enable?                                :codingbyyourself:
-
-
 
 * RESEARCH Goals       :workingwithothers:avoidingpitfalls:batteriesincluded:
 Provide a shell scripting interface which:
@@ -212,7 +209,7 @@ These shouldn't be considered right now:
 
 ** RESEARCH A Toolchain to Parallel the Python Stdlib <<rechargeable-batteries-included>> :batteriesincluded:
 
-*** PROOFOFCONCEPT Becoming Ammonite <<ammonitionl>>                   :makingionatural:
+*** PROOFOFCONCEPT Becoming Ammonite <<ammonition>>         :makingionatural:
 
 Consider the extremely thoughtful and natural API of the [[https://ammonite.io/#Ammonite-REPL][ammonite REPL]].
   - Unlike other shell-like environments, Ammonite has the type safety and well-documented standard library of Scala built-in.
