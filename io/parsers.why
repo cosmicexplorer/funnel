@@ -1,0 +1,27 @@
+# NB: This will output matching characters onto separate lines!
+# $Byte~ -> [\.T]~
+function filter-bytes {
+  grep \
+    --binary \
+    --text \
+    -E \
+    -o "$1" \
+    -
+}
+
+# $Byte~ ->
+function digit {
+  filter '[[:digit:]]'
+}
+
+function capital {
+  filter '[[:upper:]]'
+}
+
+function lowercase {
+  filter '[[:lower:]]'
+}
+
+function special-chars {
+  filter '[[:punct:]]'
+}

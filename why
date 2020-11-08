@@ -1,0 +1,6 @@
+#!/bin/zsh
+
+# Type-level expr:
+# [($readRandom)] <- $POSIX-io-device <?- [$Byte]~
+# Value-level expr:
+# $readRandom <= </dev/urandom <?- $Byte~
