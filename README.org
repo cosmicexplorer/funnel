@@ -122,7 +122,7 @@ by programs that create small temporary files.  This is for systems that
 have fast storage with limited space, such as a RAM disk."
   :group 'files
   :initialize 'custom-initialize-delay
-  :type '(c/.directory))directory))
+  :type 'directory)
 #+END_SRC
   - /Realization: ~small-temporary-file-directory~, and more generally ~info(emacs)Top>Files>Saving/Backup~, results from "~ 20 years of UX work in calculating which backup pages should stay paged in or not"./
 - [ ] this notably mirrors *PEX's ~--always-write-cache~ option.*
@@ -144,11 +144,11 @@ have fast storage with limited space, such as a RAM disk."
                         False]
 #+END_EXAMPLE
 
-*** PLAUSIBLE Subsume ~learning-progress-bar~         :streamingbuffercontrol:
+*** PLAUSIBLE /Subsume/ ~learning-progress-bar~      :streamingbuffercontrol:
 
 /I don't think anyone at all has been thinking about [[dynamic-io-control][dynamic-io-control]] yet./ *!!*
 
-**** RESEARCH contrast [[dynamic-io-control]] with what's [[statically-known]]!
+**** RESEARCH *contrast* [[dynamic-io-control]] with what's [[statically-known]]!
 
 - While this project focuses on making process executions *type-safe, cacheable, and extremely fast* (<<statically-known>>), the [[https:github.com/cosmicexplorer/learning-progress-bar][~learning-progress-bar~]] project is more focused on *tracing what happens /during/ an execution* <<dynamic-io-control>>.
 - *Both* projects:
