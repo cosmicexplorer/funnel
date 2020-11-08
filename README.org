@@ -39,11 +39,18 @@ The project owes immense inspiration to [[https://coffeescript.org][CoffeeScript
 
 The more obvious error and detriment to portable bash scripting is simply not having the desired tools. For tools that users may have installed by default, there are still e.g. incompatibilities for macOS again (such as ~sed~ not accepting the ~-r~ flag). In general, though, versions of many shell tools may also be splintered across Linux distributions, depending on how often distributions update their toolchains and how often users upgrade their OS. This can lead to a tradeoff that developers make between maintaining a complete toolchain on all shell environments, and writing lowest-common-denominator bash again, without being able to use tools such as ~sed~ or ~grep~ as expected.
 
-*** RESEARCH *Problem* Bash Splintering                            :workingwithothers:
+** PROOFOFCONCEPT *Problem* Ecosystem Splintering        :workingwithothers:
+
+*** RESEARCH [0/2] *Implementation* Make proof-of-concept PEX/sbang link up
+- [ ] PEX just in the vein of pex 2 (deleting its own custom resolve with ~spang~))
+- [ ] Investigate whether PEX can be leveraged into a self-bootstrapping directory file for **multiple languages?**
+
+
+*** PROOFOFCONCEPT *Problem* Bash Splintering             :workingwithothers:
 
 It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [[https://apple.stackexchange.com/a/197172][macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4]]. This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
 
-** RESEARCH *Implementation* Extending the Language :canonicalsolutionstohardproblems:
+** UNCLEAR *Implementation* Extending the Language :canonicalsolutionstohardproblems:
 
 One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
 
@@ -156,13 +163,14 @@ have fast storage with limited space, such as a RAM disk."
   - are intended to plug into a build tool.
 - *Output streaming can be safely delegated to ~learning-progress-bar~, while this one focuses much more on one-shot executions.*
 
-**** PLAUSIBLE ripgrep json API
-- TODO [0/2] Use the [[https://docs.rs/grep-printer/0.1.5/grep_printer/struct.JSON.html][ripgrep json output]]
-  - [ ] With ~--json~ from ~rg --help | rg -A5 '\-\-json'~, we have an <<asynchronous-parsing-database>> which can <<update-incrementally>> and <<expand-surrounding-context>> of a result
-  - [ ] along with /UnionFS/, we could /create a whole document database/ *by doing extremely fast/parallel searches via ~ripgrep~, along with a completely virtual (but locally-cacheable (or "pairwise cacheable")) filesystem mockup!!!!*
-*** Motivating Example: the [[https:github.com/undercasetype/Fraunces][Fraunces]] open-source [[https://v-fonts.com/][variable font]] :codingbyyourself:parsehelptext:variablescurrentlyarebad:
+***** Motivating Example: the [[https:github.com/undercasetype/Fraunces][Fraunces]] open-source [[https://v-fonts.com/][variable font]] :codingbyyourself:parsehelptext:variablescurrentlyarebad:
 [[https://github.com/cosmicexplorer/Fraunces/blob/56a435d9ddd4ea6e627b282fb6e4c7b8a6f8f561/sources/build.sh#L28-L71][See this highly commented code from my attempt to fix the larger issues with the build system for the /Fraunces/ family of open-source variable fonts.]]
 
+**** PLAUSIBLE ripgrep json API
+- TODO [0/3] Use the [[https://docs.rs/grep-printer/0.1.5/grep_printer/struct.JSON.html][ripgrep json output]]
+  - [ ] With ~--json~ from ~rg --help | rg -A5 '\-\-json'~, we have an <<asynchronous-parsing-database>> which can <<update-incrementally>> and <<expand-surrounding-context>> of a result
+  - [ ] along with /UnionFS/, we could /create a whole document database/ *by doing extremely fast/parallel searches via ~ripgrep~, along with a completely virtual (but locally-cacheable (or "pairwise cacheable")) filesystem mockup!!!!*
+  - [ ] this would all be doable via [[https://github.com/cosmicexplorer/helm-rg][helm-rg]]!
 
 * RESEARCH Goals       :workingwithothers:avoidingpitfalls:batteriesincluded:
 Provide a shell scripting interface which:
