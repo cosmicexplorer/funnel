@@ -98,7 +98,7 @@ A virtual file system using FUSE doesn't incur too much overhead on Linux /[cita
 https://eed3si9n.com/cached-compilation-for-sbt
 *If this omniscience was achievable, we could expect our processes to run "faster than the speed of light", i.e. faster than any conceivable heuristic model.*
 
-*** RESEARCH [0%] Type Safety and Performance by Omniscience <<typesafety>>:shellcompletionscripts:parsehelptext:
+*** RESEARCH [0/1] Type Safety and Performance by Omniscience <<typesafety>>:shellcompletionscripts:parsehelptext:
 
 Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) should accomplish two goals:
 1. [ ] We can validate the types of arguments /before/ running the script at all.
@@ -107,18 +107,17 @@ Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) shoul
 2. [ ] It should be relatively easy to write "stubs" [[https://mypy.readthedocs.io/en/stable/stubs.html][(like mypy)]] which can fill in the blanks for hand-written scripts. <<mypy-stubs>>
    - [ ] This would be an extremely natural place to start eventually developing a more thorough type inference system for shell scripts in general!
 3. [ ] This should either extend or integrate with shellcheck to provide real type safety for bash shells.
+  - [ ] Then see [[cacheable-executions][making them a virtual `Process` execution for performance!]]
 
-Then see [[cacheable-executions][making them a virtual `Process` execution for performance!]]
-
-/Benefits:/
-- This capitalizes on the existing utility of ~process_executor~, with a natural shell syntax.
-- This allows arbitrary other tools to very performantly execute processes /against/ a remote backend, or /as/ a remote backend due to the improved performance thanks to the VFS.
-- This should expose a ~upc~-like API in which processes can transparently share memory blobs and directory structures locally or remotely.
+**** Benefits UNCLEAR [/]
+1. [ ] This capitalizes on the existing utility of ~process_executor~, with a natural shell syntax.
+2. [ ] This allows arbitrary other tools to very performantly execute processes /against/ a remote backend, or /as/ a remote backend due to the improved performance thanks to the VFS.
+3. [ ] This should expose a ~upc~-like API in which processes can transparently share memory blobs and directory structures locally or remotely.
   - *This could be the FFI to end all FFIs.*
 
-*** RESEARCH [0%] Build on top of existing "UX investigations into high performance work" prior art
-- [ ] e.g. ~parallel~ (with /both/ man and info pages!),
-- [ ] See the docstring of ~small-temporary-file-directory~ (and the global ~files~ defgroup more generally):
+*** RESEARCH [0/4] Build on top of existing UX investigations into high-performance interactive page and/or serving!
+1. [ ] e.g. ~parallel~ (with /both/ man and info pages!)
+2. [ ] See the docstring of ~small-temporary-file-directory~ (and the global ~files~ defgroup more generally):
 #+NAME: emacs RAM disk config var
 #+BEGIN_SRC elisp :results silent :exports code
 (defcustom small-temporary-file-directory
@@ -150,6 +149,12 @@ have fast storage with limited space, such as a RAM disk."
                         building pexes and later invoking them. [Default:
                         False]
 #+END_EXAMPLE
+3. [ ] UNCLEAR can `man' and `woman', and especially `info', actually be surpassed?
+  - [ ] learn `xref` commands and determine navigating between everything!
+#+BEGIN_SRC elisp :results silent :exports code
+(...)
+#+END_SRC
+
 
 *** PLAUSIBLE /Subsume/ ~learning-progress-bar~      :streamingbuffercontrol:
 
@@ -164,7 +169,82 @@ have fast storage with limited space, such as a RAM disk."
 - *Output streaming can be safely delegated to ~learning-progress-bar~, while this one focuses much more on one-shot executions.*
 
 ***** Motivating Example: the [[https:github.com/undercasetype/Fraunces][Fraunces]] open-source [[https://v-fonts.com/][variable font]] :codingbyyourself:parsehelptext:variablescurrentlyarebad:
-[[https://github.com/cosmicexplorer/Fraunces/blob/56a435d9ddd4ea6e627b282fb6e4c7b8a6f8f561/sources/build.sh#L28-L71][See this highly commented code from my attempt to fix the larger issues with the build system for the /Fraunces/ family of open-source variable fonts.]]
+- [[https://github.com/cosmicexplorer/Fraunces/blob/56a435d9ddd4ea6e627b282fb6e4c7b8a6f8f561/sources/build.sh#L28-L71][See this highly commented code from my attempt to fix the larger issues with the build system for the /Fraunces/ family of open-source variable fonts.]]
+  - To really underline why there's such a /searing need/ here:
+    - the build system isn't even attempting to do anything /too/ difficult with the font variability itself!
+    - It's simply trying to convert its design into something that works canonically with existing font file *formatter* (e.g. ~FontForge~, but idk whether that was even what was /actually/ *used?!*)).
+#+BEGIN_SRC sh :results silent :exports code :dir ~/font-sources/Fraunces/
+#!/bin/sh
+set -euxo pipefail
+
+# Ensure this script is executed from within its own directory.
+GIT_ROOT="$(git rev-parse --show-toplevel)"
+cd "${GIT_ROOT}/sources"
+
+# Only use this when necessary, are currently not all instances are defined in the VF designspace
+# files.  generate static designspace referencing csv and variable designspace file later, this
+# might not be done dynamically
+# python ../mastering/scripts/generate_static_fonts_designspace.py
+
+
+## Statics
+static_fonts=(
+  # 3 arguments per line.
+  Roman/Fraunces_static.designspace ttf ../fonts/static/ttf
+  Roman/Fraunces_static.designspace otf ../fonts/static/otf/
+  Italic/FrauncesItalic_static.designspace ttf ../fonts/static/ttf/
+  Italic/FrauncesItalic_static.designspace otf ../fonts/static/otf/
+)
+function get_static_instances_from_designspaces {
+  ./extract_instances.sh {Roman,Italic}/*_static.designspace
+}
+
+
+# FIXME: This is a REALLY FANTASTIC CASE where shell scripting is EXCEEDINGLY difficult to work
+# with, but JUST AS BAD AS THE PYTHON CODE IN fixNameTable.py and friends!!!! This is a *use case*!!
+# NB: Especially take note of:
+# (1) The hacky progress bar
+# (2) The `stdbuf` unbuffering
+# (3) The partial output redirection!
+# (4) Being unable to use `xargs` or `parallel` with shell functions means recreating these
+#     ".../*_static.designspace" globs in get_static_instances_from_designspaces()!
+
+# NB: Looking to address all of the above with https://github.com/cosmicexplorer/funnel
+
+function generate_static_fonts {
+  # This is really quick to calculate, and lets us know how much progress we're making!
+  total_num_static_instances="$(get_static_instances_from_designspaces | wc -l)"
+  echo "Generating Static fonts ($total_num_static_instances in total)"
+
+  # (1) Process each .designspace XML file and output format in parallel with `xargs`.
+  # (2) At this point, we're dealing with a ton of output, so we tee it to stderr so the user can
+  #     redirect to /dev/null if they don't need that finer-grained info.
+  # (3) However on stdout, we filter for messages that describe successfully writing out a .otf or
+  #     .ttf file, and give a quick progress bar with percentage, since we know how *many* instances
+  #     we'll eventually need to write, even if we're not checking which exact ones those are.
+  instances_processed=0
+  printf '%s\n' "${static_fonts[@]}" \
+    | 2>&1 stdbuf -i0 -o0 -e0 xargs -t -L 3 --max-procs=0 ./generate_font_instances.sh \
+    | stdbuf -i0 -o0 -eL tee /dev/stderr \
+    | sed -Ene 's#^INFO:fontmake.font_project:Saving (.*)$#\1#gp' \
+    | while read just_saved_font; do
+    instances_processed="$(($instances_processed + 1))"
+    percent_complete="$((($instances_processed / $total_num_static_instances) / 100.0))"
+    echo "${percent_complete}% complete: ${instances_processed}/${total_num_static_instances} (${just_saved_font})"
+  done
+}
+
+time generate_static_fonts
+exit 0
+
+echo "Post processing"
+
+gftools fix-dsig -a ../fonts/static/ttf/*.ttf
+gftools fix-hinting ../fonts/static/ttf/*.ttf
+# NB: This script appears to be doing something incredibly complex that it absolutely should not be
+# attempting to do on its own.
+python ../mastering/scripts/fixNameTable.py ../fonts/static/ttf/*.ttf
+#+END_SRC
 
 **** PLAUSIBLE ripgrep json API
 - TODO [0/3] Use the [[https://docs.rs/grep-printer/0.1.5/grep_printer/struct.JSON.html][ripgrep json output]]
