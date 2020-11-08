@@ -3,7 +3,7 @@
 
 Description of the funnel /language/ which is intended to extend the POSIX shell syntax to make scripts more maintainable, less brittle, and more fun to write! See [[file:~/projects/active/funnel/README.org::*Extending the Language][Extending the Language]] for more context on the motivation for a separate language.
 
-* Goals
+* Goals [0%]
 ** TODO [0/1] clean up the millions of ways to declare variables
 - [ ] just use ~declare~ (or something without bikeshedding too much)
 ** TODO [0/1] extend shellcheck and/or transpile

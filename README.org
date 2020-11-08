@@ -24,39 +24,46 @@ This currently has a few separate angles:
    - [ ] to convert the knowledge of that type system directly into unheard-of performance.
    - [ ] to [[*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]].
    - [ ] ...and [[dropping-in][this should all "just work" on everyone's existing code]] without too many changes!
+   - [ ] to use [[file:README.org::spread-out-existing-expansion-techniques][e.g. the extremely complex expansion techniques in ~zshexpn(1)~ and others in ~toolchain~.]]
 3. [ ] [[rechargeable-batteries-included][An extremely natural method to /avoid the "multi-language problem" entirely,/ **using the shell as the universal interface.**]]
    - [ ] very strongly influenced by [[ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
-   - [ ] /most/ importantly, [[dynamic-io-control][I/O /must/ not be arbitrarily buffered by the programming language]]. **Ideas of input and output of processes should be thrown in the gutter.**
+   - [ ] /most/ importantly, [[dynamic-io-control][I/O /must/ not be arbitrarily buffered by the programming language]]. *Ideas of input and output of processes should be thrown in the gutter.*
 
-*  Motivation for Changes to the Language Itself <<a-specific-language>>
+* RESEARCH Motivation for Changes to the Language Itself <<a-specific-language>>
 
 /A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts./
 
 The project owes immense inspiration to [[https://coffeescript.org][CoffeeScript]], which demonstrated it was possible to write more-complex code with an extended feature set and still work in all browser environments through transpilation, which then inspired the incorporation of those exact features into JavaScript at large.
 
-** RESEARCH Bash Splintering                              :workingwithothers:
-
-It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [[https://apple.stackexchange.com/a/197172][macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4]]. This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
-
-** PLAUSIBLE Toolchain Bootstrapping     :avoidingpitfalls:workingwithothers:
+** PLAUSIBLE *Problem* Toolchain Bootstrapping :avoidingpitfalls:workingwithothers:
 
 The more obvious error and detriment to portable bash scripting is simply not having the desired tools. For tools that users may have installed by default, there are still e.g. incompatibilities for macOS again (such as ~sed~ not accepting the ~-r~ flag). In general, though, versions of many shell tools may also be splintered across Linux distributions, depending on how often distributions update their toolchains and how often users upgrade their OS. This can lead to a tradeoff that developers make between maintaining a complete toolchain on all shell environments, and writing lowest-common-denominator bash again, without being able to use tools such as ~sed~ or ~grep~ as expected.
 
-** PLAUSIBLE Avoiding Bash Pitfalls                        :avoidingpitfalls:
+*** RESEARCH *Problem* Bash Splintering                            :workingwithothers:
+
+It seems very unfortunate that "bash" is likely still synonymous with "shell" for many people, only ebecause bash has also splintered in versions and feature sets across environments, and a lot of this may be due to the fact that [[https://apple.stackexchange.com/a/197172][macOS won't update its preinstalled version of bash to 4 or higher, due to concerns about the GPLv3 license used for bash 4]]. This means users writing bash often have to manually write lowest-common-denominator bash scripts (scripts which work on the lowest bash version they need to support) to ensure portability, which tends to make these scripts more difficult to write and maintain.
+
+** RESEARCH *Implementation* Extending the Language :canonicalsolutionstohardproblems:
+
+One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
+
+These portable tools (~sed~ and ~grep~) can be said to provide an /unmatched/ level of /type safety/ (similar to test maturity) as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[typesafety][infer a real form of type safety from the help text and/or shell completions]].
+
+Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
+
+*** PLAUSIBLE *Problem* Avoiding Bash Pitfalls             :avoidingpitfalls:
 
 Separate from toolchains, many bash semantics can tend to confuse users, even experienced ones. Last week I learned that ~set -e~ doesn't exit on a failed command if it's within the body of a ~function~! Many other shells such as [[https://zsh.sourceforge.net][zsh]] fix issues with e.g. variable declarations, but those other shells are even less likely to be installed by default. [[https://www.shellcheck.net][ShellCheck]] is often used in codebases to avoid these pitfalls, but custom checks may still have to be written -- the [[https://pantsbuild.org][pants]] repo required this separate [[https://github.com/pantsbuild/pants/blob/4a19087e42ff05608a997b3b5f372420eaaeeb33/build-support/bin/check_shell.sh#L2][check for broken ~readonly~ statements which don't cause ~set -e~ to fail]]. This checking requires effort to maintain and still may be incomplete.
 
 While ShellCheck *can* capture pitfalls and style errors, it seems that the number of pitfalls is so great that we might consider looking at a whitelisting approach instead -- not allowing these pitfalls to be expressable at all, perhaps by writing a new language, which transpiles to lowest-common-denominator bash scripts!
 
-** RESEARCH Extending the Language         :canonicalsolutionstohardproblems:
-
-One thing that transpilation also allows you to do is insert an arbitrary amount of code before and/or after the compiled script itself. [[https://coffeescript.org][CoffeeScript]], for example, will monkey-patch some array prototype methods before executing the script, to ensure that its compiled output will be able to rely on those array methods (see [[prelude-runtime][Prelude / Runtime]]). In our case, we can consider adding to that prelude a layer which ensures up-to-date versions of not just *familiar* tools like ~sed~ and ~grep~, but also *extremely useful and portable tools* such as [[https://www.gnu.org/software/parallel][gnu parallel]] (which isn't very well-known, possibly due to not being installed by default (unlike ~xargs~, which is less featureful but does some of the same things)).
-
-These portable tools can be said to provide an /unmatched/ level of /type safety/ as a result of their /mainenance over decades/. We should be able to /canonicalize/ and have the /compiler/ tell the user all of this, instead of leaving it as tribal knowledge. One of the most immediate ways to do this is to [[typesafety][infer a real form of type safety from the help text and/or shell completions]].
-
-Also of note is that the CoffeeScript compiler will wrap the output in an anonymous function to ensure it won't pollute the global JavaScript namespace. Analogously, we can also consider introducing a better module system to bash, and perhaps a package manager (?).
-
-* Argument for a Much More Virtual Environment  <<virtual-environment>> :trackingdistributedmemory:
+*** MAINTAINABLE Existing Forays into Fun Expansion
+- Mainly see ~zshexpn(1)~, and especially into the *extreme complexity and terseness* in the "history expansion section" in particular.
+- Being able to nest ~${${...}}~ is also a homogenous and really neat interface!
+  - Immediately becomes incomprehensible when stacked too far.
+    - If the same transformations can be composed across long command lines, and made safe (even faster), I think we would have built something good. <<spread-out-existing-expansion-techniques>>
+- *There is an extremely thorough dialog on ease of keybindings in XTerm on bash vs zsh because of their string handling mechanisms at ~xterm(1)~!!*
+* UNCLEAR Argument for a Much More Virtual Environment  <<virtual-environment>> :trackingdistributedmemory:
 
 1. Building on ~upc~, consider how performance analysis and benchmarking can change overnight if/when it's not only possible to /trace/ filesystem and network I/O vs RAM pressure vs CPU, but to *directly /orchestrate/ it*.
   - In particular, the [[https://github.com/pantsbuild/pants][pants]] project is developing a method for invoking arbitrary subprocesses (typically compilers/etc) within a virtual filesystem with [[https://github.com/pantsbuild/pants/tree/master/src/rust/engine/fs/brfs][~brfs~]].
@@ -78,12 +85,13 @@ A virtual file system using FUSE doesn't incur too much overhead on Linux /[cita
 - [ ] If we knew the expected /size/ of those future files, we could allocate the appropriate regions immediately.
 - [ ] If we knew every file that needed to be /read/ by a process beforehand, we could allocate (perhaps even pool) read-only buffers before the process executes.
 
-<> fast enough IPC is just an FFI
+- "fast enough IPC is just an FFI"
+
 <<> eugene and zinc vfs
 https://eed3si9n.com/cached-compilation-for-sbt
 *If this omniscience was achievable, we could expect our processes to run "faster than the speed of light", i.e. faster than any conceivable heuristic model.*
 
-*** RESEARCH [0%]Type Safety and Performance by Omniscience <<typesafety>>:shellcompletionscripts:parsehelptext:
+*** RESEARCH [0%] Type Safety and Performance by Omniscience <<typesafety>>:shellcompletionscripts:parsehelptext:
 
 Parsing bash/zsh completion scripts (or obtaining them from e.g. ~--help~) should accomplish two goals:
 1. [ ] We can validate the types of arguments /before/ running the script at all.
@@ -101,7 +109,46 @@ Then see [[cacheable-executions][making them a virtual `Process` execution for p
 - This should expose a ~upc~-like API in which processes can transparently share memory blobs and directory structures locally or remotely.
   - *This could be the FFI to end all FFIs.*
 
-** PLAUSIBLE Subsume ~learning-progress-bar~         :streamingbuffercontrol:
+*** RESEARCH [0%] Build on top of existing "UX investigations into high performance work" prior art
+- [ ] e.g. ~parallel~ (with /both/ man and info pages!),
+- [ ] See the docstring of ~small-temporary-file-directory~ (and the global ~files~ defgroup more generally):
+#+NAME: emacs RAM disk config var
+#+BEGIN_SRC elisp :results silent :exports code
+(defcustom small-temporary-file-directory
+  (if (eq system-type 'ms-dos) (getenv "TMPDIR"))
+  "The directory for writing small temporary files.
+If non-nil, this directory is used instead of `temporary-file-directory'
+by programs that create small temporary files.  This is for systems that
+have fast storage with limited space, such as a RAM disk."
+  :group 'files
+  :initialize 'custom-initialize-delay
+  :type '(c/.directory))directory))
+#+END_SRC
+  - /Realization: ~small-temporary-file-directory~, and more generally ~info(emacs)Top>Files>Saving/Backup~, results from "~ 20 years of UX work in calculating which backup pages should stay paged in or not"./
+- [ ] this notably mirrors *PEX's ~--always-write-cache~ option.*
+#+NAME: pex performance cli options
+#+BEGIN_EXAMPLE
+    --unzip, --no-unzip
+                        Whether or not the pex file should be unzipped before
+                        executing it. If the pex file will be run multiple
+                        times under a stable runtime PEX_ROOT the unzipping
+                        will only be performed once and subsequent runs will
+                        enjoy lower startup latency. [Default: do not unzip.]
+    --always-write-cache
+                        Always write the internally cached distributions to
+                        disk prior to invoking the pex source code.  This can
+                        use less memory in RAM constrained environments.
+                        [Default: False]
+    --ignore-errors     Ignore requirement resolution solver errors when
+                        building pexes and later invoking them. [Default:
+                        False]
+#+END_EXAMPLE
+
+*** PLAUSIBLE Subsume ~learning-progress-bar~         :streamingbuffercontrol:
+
+/I don't think anyone at all has been thinking about [[dynamic-io-control][dynamic-io-control]] yet./ *!!*
+
+**** RESEARCH contrast [[dynamic-io-control]] with what's [[statically-known]]!
 
 - While this project focuses on making process executions *type-safe, cacheable, and extremely fast* (<<statically-known>>), the [[https:github.com/cosmicexplorer/learning-progress-bar][~learning-progress-bar~]] project is more focused on *tracing what happens /during/ an execution* <<dynamic-io-control>>.
 - *Both* projects:
@@ -109,86 +156,12 @@ Then see [[cacheable-executions][making them a virtual `Process` execution for p
   - are intended to plug into a build tool.
 - *Output streaming can be safely delegated to ~learning-progress-bar~, while this one focuses much more on one-shot executions.*
 
-/I don't think anyone at all has been thinking about [[dynamic-io-control]] yet./ *!!*
-
+**** PLAUSIBLE ripgrep json API
+- TODO [0/2] Use the [[https://docs.rs/grep-printer/0.1.5/grep_printer/struct.JSON.html][ripgrep json output]]
+  - [ ] With ~--json~ from ~rg --help | rg -A5 '\-\-json'~, we have an <<asynchronous-parsing-database>> which can <<update-incrementally>> and <<expand-surrounding-context>> of a result
+  - [ ] along with /UnionFS/, we could /create a whole document database/ *by doing extremely fast/parallel searches via ~ripgrep~, along with a completely virtual (but locally-cacheable (or "pairwise cacheable")) filesystem mockup!!!!*
 *** Motivating Example: the [[https:github.com/undercasetype/Fraunces][Fraunces]] open-source [[https://v-fonts.com/][variable font]] :codingbyyourself:parsehelptext:variablescurrentlyarebad:
 [[https://github.com/cosmicexplorer/Fraunces/blob/56a435d9ddd4ea6e627b282fb6e4c7b8a6f8f561/sources/build.sh#L28-L71][See this highly commented code from my attempt to fix the larger issues with the build system for the /Fraunces/ family of open-source variable fonts.]]
-
-#+NAME: asdf
-#+BEGIN_SRC sh :results silent :exports code :dir ~/font-sources/Fraunces/
-#!/bin/sh
-set -euxo pipefail
-
-# Ensure this script is executed from within its own directory.
-GIT_ROOT="$(git rev-parse --show-toplevel)"
-cd "${GIT_ROOT}/sources"
-
-# Only use this when necessary, are currently not all instances are defined in the VF designspace
-# files.  generate static designspace referencing csv and variable designspace file later, this
-# might not be done dynamically
-# python ../mastering/scripts/generate_static_fonts_designspace.py
-
-
-## Statics
-static_fonts=(
-  # 3 arguments per line.
-  Roman/Fraunces_static.designspace ttf ../fonts/static/ttf
-  Roman/Fraunces_static.designspace otf ../fonts/static/otf/
-  Italic/FrauncesItalic_static.designspace ttf ../fonts/static/ttf/
-  Italic/FrauncesItalic_static.designspace otf ../fonts/static/otf/
-)
-function get_static_instances_from_designspaces {
-  ./extract_instances.sh {Roman,Italic}/*_static.designspace
-}
-
-
-# FIXME: This is a REALLY FANTASTIC CASE where shell scripting is EXCEEDINGLY difficult to work
-# with, but JUST AS BAD AS THE PYTHON CODE IN fixNameTable.py and friends!!!! This is a *use case*!!
-# NB: Especially take note of:
-# (1) The hacky progress bar
-# (2) The `stdbuf` unbuffering
-# (3) The partial output redirection!
-# (4) Being unable to use `xargs` or `parallel` with shell functions means recreating these
-#     ".../*_static.designspace" globs in get_static_instances_from_designspaces()!
-
-# NB: Looking to address all of the above with https://github.com/cosmicexplorer/funnel
-
-function generate_static_fonts {
-  # This is really quick to calculate, and lets us know how much progress we're making!
-  total_num_static_instances="$(get_static_instances_from_designspaces | wc -l)"
-  echo "Generating Static fonts ($total_num_static_instances in total)"
-
-  # (1) Process each .designspace XML file and output format in parallel with `xargs`.
-  # (2) At this point, we're dealing with a ton of output, so we tee it to stderr so the user can
-  #     redirect to /dev/null if they don't need that finer-grained info.
-  # (3) However on stdout, we filter for messages that describe successfully writing out a .otf or
-  #     .ttf file, and give a quick progress bar with percentage, since we know how *many* instances
-  #     we'll eventually need to write, even if we're not checking which exact ones those are.
-  instances_processed=0
-  printf '%s\n' "${static_fonts[@]}" \
-    | 2>&1 stdbuf -i0 -o0 -e0 xargs -t -L 3 --max-procs=0 ./generate_font_instances.sh \
-    | stdbuf -i0 -o0 -eL tee /dev/stderr \
-    | sed -Ene 's#^INFO:fontmake.font_project:Saving (.*)$#\1#gp' \
-    | while read just_saved_font; do
-    instances_processed="$(($instances_processed + 1))"
-    percent_complete="$((($instances_processed / $total_num_static_instances) / 100.0))"
-    echo "${percent_complete}% complete: ${instances_processed}/${total_num_static_instances} (${just_saved_font})"
-  done
-}
-
-time generate_static_fonts
-exit 0
-
-echo "Post processing"
-
-gftools fix-dsig -a ../fonts/static/ttf/*.ttf
-gftools fix-hinting ../fonts/static/ttf/*.ttf
-# NB: This script appears to be doing something incredibly complex that it absolutely should not be
-# attempting to do on its own.
-python ../mastering/scripts/fixNameTable.py ../fonts/static/ttf/*.ttf
-#+END_SRC
-
-To really underline why there's such a searing need here, the build system isn't even attempting to do anything /too/ difficult with the font variability itself! It's simply trying to convert its design into something that works canonically with existing font file formats! And the tools are there -- **but not in a way that lets just anyone go off and start preparing their own font!!!**
 
 
 * RESEARCH Goals       :workingwithothers:avoidingpitfalls:batteriesincluded:
