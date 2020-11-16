@@ -54,12 +54,13 @@ Instead of whatever's on your developer's machines, or whatever you can fudge in
 *** TODO POWERFUL [0/3]
 *Represent common bash patterns with the appropriate level of complexity!*
 
-- [ ] Binary vs text streams are differentiated.
+- [ ] Binary vs text <<streams>> are differentiated.
 - [ ] Arrays and map creation, access, and modification are typed.
   - [ ] Massage a shell output with 0 lines to be an empty array, instead of ~( '' )~.
-- [ ] A /return code/ vs /file outputs/ are represented in the type system for each <<expression>> /(TODO: I think?)/:
-  - [ ] function calls.
-  - [ ] subshells.
+- [ ] A /return code/ vs /file outputs/ are represented in the type system for each <<expression>>: [0/3]
+  - [ ] function calls
+  - [ ] subshells
+  - [ ] variable access and modification
 
 ** TODO Discussion [0/2]
 
