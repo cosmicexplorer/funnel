@@ -1,12 +1,14 @@
 #+TITLE: funnel
+#+STARTUP: showall
 #+TODO: UNCLEAR RESEARCH PLAUSIBLE PROOFOFCONCEPT FEASIBLE MAINTAINABLE | TODO DONE
 
 * RESEARCH Overview
 
-The idea behind the name "funnel" is that it should allow writing code at a higher level of abstraction, which all gets compiled down to the lowest common denominator of bash scripting.
+The idea behind the name "funnel" is that it should allow writing code at a /higher/ level of abstraction, which all gets compiled /down/ to the lowest common denominator of bash scripting.
 
 This currently has a few separate angles:
-1. [[a-specific-language][A novel programming language transpiling into bash/etc with an effect-based type system]].
+1. [[a-specific-language][A novel programming language]] *transpiling into bash* /etc/.
+   - with an effect-based type system.
 2. [[virtual-environment][A virtualized filesystem and process execution environment to convert the knowledge of that type system directly into unheard-of performance.]]
    - /most/ importantly, [[dynamic-io-control][I/O /must/ not be arbitrarily buffered by the programming language]].
      - *Ideas of input and output of processes should be thrown in the gutter beforehand.*
@@ -22,23 +24,53 @@ This currently has a few separate angles:
    - But "more tech isn't the answer to social problems."
 
 ** TODO Goals
-*** TODO Maintainable [0/4]
-- [ ] [[*Toolchain Bootstrapping][canonicalize incredibly well-documented /(read: well-typed!)/ shell tooling]] via the [[https://github.com/cosmicexplorer/bootstrap][bootstrap]] project.
-  - /Instead of: whatever's on your developer's machines, or whatever you can fudge into a single docker image./
-- [ ] /deeply/ document the /minute/ and /crucial/ differences between sh/bash/zsh/ksh/csh/tcsh/fish, even across versions.
-- [ ] /respect/ the
-- [ ] have a *really simple* (so likely thefore revolutionary) module system.
-*** TODO POWERFUL [0/1]
+*** TODO Gradual [0/3]
+- [ ] **The language will remain completely <<optional>>.*
+  - [ ] The language can parse [[shs][all common shells]] and use all their functions and variables.
+  - [ ] Introduces the concept of _<<telescoping-syntax>> from a language X to Y_, which accepts any mixture of statements/expressions in X and in Y in the same context.
+  - [ ] Allows a wide variance of syntaxes and macros /(TIMTOWDI)/ which may feel more or less reasonable to people from other languages.
+- [ ] **<<transpiles>> to [[lowest-common-denominator]] bash.**
+  - [ ] transpiling to any of /multiple/ <<backend shells>> in order to <<support multiple platforms>>.
+- [ ] **<<types>> are trained upon ~--help~ output and/or shell completion scripts.**
+  - [ ] **consider a method using strace as well if neither are available or helpful!**
+
+*** TODO Maintainable [0/2]
+*[[*Toolchain Bootstrapping][Canonicalize* incredibly well-documented /(read: well-typed!)/ shell tooling]] via the [[https://github.com/cosmicexplorer/bootstrap][bootstrap]] project:
+
+#+BEGIN_QUOTE
+Instead of whatever's on your developer's machines, or whatever you can fudge into a single docker image.
+#+END_QUOTE
+
+/Deeply/ document the /minute/ and /crucial/ differences between sh/bash/zsh/ksh/csh/tcsh/fish <<shs>>, even across versions, and /respect/ them.
+
+- [ ] fix longtime bash issues: [0/3]
+  - [ ] <<modifying the underlying file>> makes the script break at runtime.
+  - [ ] <<array and map access syntax>> (as well as <<loop syntax>>) is /inscrutable/.
+  - [ ] canonicalize variable declararations: [0/2]
+    - [ ] <<immutable by default>>.
+    - [ ] introduce new keywords for array and map declarations.
+- [ ] have a *really simple* (and thefore revolutionary) <<module system>>.
+
+*** TODO POWERFUL [0/3]
+*Represent common bash patterns with the appropriate level of complexity!*
+
+- [ ] Binary vs text streams are differentiated.
+- [ ] Arrays and map creation, access, and modification are typed.
+  - [ ] Massage a shell output with 0 lines to be an empty array, instead of ~( '' )~.
+- [ ] A /return code/ vs /file outputs/ are represented in the type system for each <<expression>> /(TODO: I think?)/:
+  - [ ] function calls.
+  - [ ] subshells.
+
+** TODO Discussion [0/2]
+
+*The TODO in this section is non-blocking!*
+
 - [ ] achieve [[statically-known][/much/ stronger typing guarantees]] than are available in other languages that don't have such fine requirements for I/O.
   - possibly influenced by [[ammonition][the way the Ammonite REPL converts filesystem and process actions into structured results]] that can be /manipulated with a few implicits/.
-
-  - gradual migration ::
-- **The language will remain completely optional.**
-- The language can parse all common shells and use all their functions and variables.
-  - Introduces the concept of /<<telescoping-syntax>> from a language X to Y/, which accepts any mixture of statements/expressions in X and in Y in the same context.
-- compiles to [[lowest-common-denominator]] bash/etc.
-- types are trained upon ~--help~ output and/or shell completion scripts.
-- language allows a wide variance of syntaxes and macros (TIMTOWDI) which may feel more or less reasonable to people from other languages.
+- [ ] *Consider:* what type of syntax will this lead to? e.g.:
+  - [ ] a /perfectly general/ language definition, which the language itself is written in.
+  - [ ] a method of introducing spheres of a completely different sub-language.
+    - [ ] *TODO: find that tweet discussion with nora and the other guy who described this!*
 
 /A transpiler, standard library, and self-bootstrapping tool environment to write more portable and maintainable bash scripts./
 
@@ -223,12 +255,11 @@ In order to get more familiarity with the <<
 /what can "super super fast X" be used for?/
 1. distributed asynchronous text scanning / parsing
    - in a distributed process execution system, it allows a simply configurable model of fetching process output
-2. openMP/MPI and ESPECIALLY sycl
+2. *openMP/MPI and ESPECIALLY [[https://github.com/KhronosGroup/SYCL-docs][sycl]]!!!!*
    - try making the rust regex crate's generated automata into distributed objects, which would enable massive parallelism across those very focused UnionFS chroots
 
 
 * RESEARCH Goals
-
 
 ** RESEARCH A Toolchain to Parallel the Python Stdlib <<rechargeable-batteries-included>>
 
