@@ -222,7 +222,9 @@ $$package:$function$$wow
 # $functions can be composed via mere juxtaposition:
 $f$g$h =!= $h($g($f(\.-)))
 
-
+# declare a function $f with an argument .x of type $Nat which has the default value 0:
+$f(\.x[$Nat](0)) <= .x$plus(3)
+$f <= \.x[$Nat](0)$plus(3)
 ###
 
 $equals <= [\.X, \.Y] -> {\.inst <~ $equatable[.X, .Y]} => (\.x, \.y) => .inst.equal(.x(.x), .y(.y))
