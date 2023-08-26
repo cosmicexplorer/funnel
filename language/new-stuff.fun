@@ -36,18 +36,18 @@ $Integer -!- [(3)]
 $equals[\.X\.Y] =<=
   # (\~inst[$Equatable[.X/.Y]], \.a[.X], \.b[.Y]}) =>
   # (\.inst <~ [$Equatable[.X, .Y]]) =>
-  (\~inst[$Equatable[.X/.Y]]) =>
+  (\.inst~[$Equatable[.X/.Y]]) =>
   (\.a[.X]\.b[.Y]) =>
     .inst.equal(.a/.b)
     # .inst.equal(.a, .b)[(.cmp[$Boolean])]
 
 # semicolon/slash/colon used to sequence operations:
 # (the $Numeric[.T] instance is added in scope but without any name)
-$f[\.T] =<= \~inst[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T];(
 # $f[\.T -> \~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T];(
 # "[x]y" or "(x)y" is necessary to use any variables bound in "x" in "y"; otherwise variables are
 # bound in parallel (?)
 # $f[[\.T]\~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T];(
+$f[\.T] =<= \.inst~[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T];(
   ; .z <= $plus(.x/.y) /
     .a <= $times(.x/.y)
   ; .b <= $pow(.z/.a)
@@ -82,7 +82,7 @@ $Boolean -<- [(
 )]
 
 # implicit rule graph search (for conversions .T => $Integer):
-$f[\.T](\.x[.T]) =<= \~convert[(\.x[.T] / .y[$Integer])] => [$Integer](convert(.x)$plus(3))
+$f[\.T](\.x[.T]) =<= \.convert~[(\.x[.T] / .y[$Integer])] => [$Integer](.convert(.x)$plus(3))
 # using shorthand for directly converting arguments:
 $f[\.T](\.x[.T] ~> .y[$Integer]) =<= [$Integer](.y$plus(3))
 
@@ -116,7 +116,7 @@ $$package:$function
 $$package:$function$$wow
 
 # $functions can be composed via mere juxtaposition:
-$f$g$h =!= $h($g($f(\.-)))
+[($f$g$h)] -!- [($h($g($f(\.-))))]
 
 # declare a function $f with an argument .x of type $Nat which has the default value 0:
 $f(\.x[$Nat](0)) =<= .x$plus(3)
