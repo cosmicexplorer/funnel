@@ -34,7 +34,7 @@ $Integer -!- [(3)]
 
 # define a method which accepts an implicit instance of the typeclass:
 $equals[\.X\.Y] =<=
-  # (\~inst[$Equatable[.X/.Y]], \.a[.X], \.b[.Y]}) =>
+  # (\.inst~[$Equatable[.X/.Y]], \.a[.X], \.b[.Y]}) =>
   # (\.inst <~ [$Equatable[.X, .Y]]) =>
   (\.inst~[$Equatable[.X/.Y]]) =>
   (\.a[.X]\.b[.Y]) =>
@@ -143,3 +143,13 @@ $List[\.T](\.n[$Nat]) -<- .n+(
 # invocation. "[(...)]" is similar to idris's "Type", in that it returns a promise to create a type
 # specification that can then be used in later type-level operations:
 x[\.T](\.n) -<- [(...)]
+
+
+# Define a javascript-style keyed object, but where "+a" is a unique symbol key and separate from the
+# string "a" key:
+$hashMap =<= \+(
+  +a => 3
+  +("a") => 4
+  +b => 5
+  +("c") => 6
+)
