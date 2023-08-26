@@ -115,10 +115,11 @@ $equatable <= [\.X, \.Y] -> (
 ### new stuff:
 # a *type* is a specification which may *match* a *value*. "matching" refers to type resolution.
 # the [(...)] operator produces such a specification from a subset of the struct literal syntax:
-$A <- [(.x[$Integer])]
+# -<- *assigns* a type from right to left. =<= does the same for values.
+$A -<- [(.x[$Integer])]
 
 # define a typeclass:
-$Equatable[\.X\.Y] <- [(
+$Equatable[\.X\.Y] -<- [(
   # \.equal <- [(\.x[.X]\.y[.Y]) => [(.cmp[$Boolean])]],
   # [(...)] does not accept <= or =>, so we use / instead
   \.equal[(\.x[.X]\.y[.Y] / .cmp[$Boolean])]
@@ -137,7 +138,7 @@ $Equatable[$Integer, $Integer] -> (
 $Integer -!- [(3)]
 
 # define a method which accepts an implicit instance of the typeclass:
-$equals[\.X\.Y] <=
+$equals[\.X\.Y] =<=
   # (\~inst[$Equatable[.X/.Y]], \.a[.X], \.b[.Y]}) =>
   # (\.inst <~ [$Equatable[.X, .Y]]) =>
   (\~inst[$Equatable[.X/.Y]]) =>
@@ -147,7 +148,7 @@ $equals[\.X\.Y] <=
 
 # semicolon/slash/colon used to sequence operations:
 # (the $Numeric[.T] instance is added in scope but without any name)
-$f[\.T] <= \~inst[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T];(
+$f[\.T] =<= \~inst[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T];(
 # $f[\.T -> \~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T];(
 # "[x]y" or "(x)y" is necessary to use any variables bound in "x" in "y"; otherwise variables are
 # bound in parallel (?)
@@ -159,7 +160,7 @@ $f[\.T] <= \~inst[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T];(
   : $xor(.z/.b)
 )
 
-$g(\.x[$Integer]) <= [$Boolean](
+$g(\.x[$Integer]) =<= [$Boolean](
   # \+0 => $boolean+true
   \+0 => +true
   \+1 => +false
@@ -180,28 +181,28 @@ $g(\.x[$Integer]) <= [$Boolean](
 
 # NB: right now, +cases with an initial capital are not allowed, as it does not seem to correspond
 # to the values/types analogy we have for ".[aA]" and "$[aA]".
-$Boolean <- [(
+$Boolean -<- [(
   \+true
   \+false
 )]
 
 # implicit rule graph search (for conversions .T => $Integer):
-$f[\.T](\.x[.T]) <= \~convert[(\.x[.T] / .y[$Integer])] => [$Integer](convert(.x)$plus(3))
+$f[\.T](\.x[.T]) =<= \~convert[(\.x[.T] / .y[$Integer])] => [$Integer](convert(.x)$plus(3))
 # using shorthand for directly converting arguments:
-$f[\.T](\.x[.T] ~> .y[$Integer]) <= [$Integer](.y$plus(3))
+$f[\.T](\.x[.T] ~> .y[$Integer]) =<= [$Integer](.y$plus(3))
 
 # modules and namespaces:
 :submodule {
   :inner {
-    $x <= 3
+    $x =<= 3
   }
   # submodules can be reopened after first declared:
   :inner {
-    $y <= 4
+    $y =<= 4
   }
 }
 :submodule:inner {
-  $z <= 5
+  $z =<= 5
 }
 # access nested modules via ":"
 $submodule:inner:x =!= 3
@@ -223,8 +224,10 @@ $$package:$function$$wow
 $f$g$h =!= $h($g($f(\.-)))
 
 # declare a function $f with an argument .x of type $Nat which has the default value 0:
-$f(\.x[$Nat](0)) <= .x$plus(3)
-$f <= \.x[$Nat](0)$plus(3)
+$f(\.x[$Nat](0)) =<= .x$plus(3)
+$f =<= \.x[$Nat](0)$plus(3)
+
+
 ###
 
 $equals <= [\.X, \.Y] -> {\.inst <~ $equatable[.X, .Y]} => (\.x, \.y) => .inst.equal(.x(.x), .y(.y))
