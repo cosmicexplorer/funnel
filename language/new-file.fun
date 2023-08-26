@@ -126,7 +126,7 @@ $Equatable[\.X\.Y] <- [(
 
 # define an instance of the typeclass (not assigned to any named value, but now available in
 # implicit search scope):
-# $Equatable[.X[$Integer], .Y[$Integer]] -> (
+# $Equatable[.X[$Integer]/.Y[$Integer]] -> (
 $Equatable[$Integer, $Integer] -> (
   .equal(\.x[$Integer]\.y[$Integer] => .cmp($primitive$integer-equals(.x/.y)))
 )
@@ -183,6 +183,16 @@ $g(\.x[$Integer]) <= [$Boolean](
 $Boolean <- [(
   \+true
   \+false
+)]
+
+
+# implicit rule graph search (for conversions .T => $Integer):
+$f[\.T](\.x[.T]) <= \~convert[(\.x[.T] / .y[$Integer])] => [$Integer](convert(.x)$plus(3))
+# using shorthand for directly converting arguments:
+$f[\.T](\.x[.T] ~> .y[$Integer]) <= [$Integer](.y$plus(3))
+
+$C <- [(
+  .x
 )]
 ###
 
