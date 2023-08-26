@@ -121,14 +121,22 @@ $A -<- [(.x[$Integer])]
 # define a typeclass:
 $Equatable[\.X\.Y] -<- [(
   # \.equal <- [(\.x[.X]\.y[.Y]) => [(.cmp[$Boolean])]],
-  # [(...)] does not accept <= or =>, so we use / instead
+  # \.equal[(\.x[.X]\.y[.Y] => .cmp[$Boolean])]
+  # "/" happens to be equivalent to "=>" here, but "/" is used to signal that we are defining
+  # a type, not describing any value-level function logic:
   \.equal[(\.x[.X]\.y[.Y] / .cmp[$Boolean])]
 )]
 
-# define an instance of the typeclass (not boound to any named value, but now available in
+# this is because "\.x" is actually a function accepting .x and returning .x:
+[(\.x)] -!- [(\.x => .x)]
+
+# define an instance of the typeclass (not bound to any named value, but now available in
 # implicit search scope):
 # $Equatable[.X[$Integer]/.Y[$Integer]] -> (
-$Equatable[$Integer, $Integer] -> (
+$Equatable[$Integer/$Integer] -> (
+  # we have to use the "=>" here, because "/" evaluates in parallel and we need ".x" and ".y" to be
+  # bound when evaluating the expression for ".cmp". this is why it is useful to use "/" in type
+  # signatures for functions.
   .equal(\.x[$Integer]\.y[$Integer] => .cmp($primitive$integer-equals(.x/.y)))
 )
 
