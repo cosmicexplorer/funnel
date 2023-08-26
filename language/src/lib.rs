@@ -2,13 +2,36 @@
  * Description: ???
  *
  * Copyright (C) 2023 Danny McClanahan <dmcC2@hypnicjerk.ai>
- * SPDX-License-Identifier: LGPL-3.0
+ * SPDX-License-Identifier: GPL-3.0
  *
  * FIXME: is this sufficient license notice?
- * Licensed under the Lesser GPL, Version 3.0 (see LICENSE).
+ * Licensed under the GNU GPL, Version 3.0 (see LICENSE).
  */
 
 //! ???
+//!
+//! # Tokens
+//! 1. global dereference: `\$[a-zA-Z][a-zA-Z0-9_-]*`
+//! 2. local dereference: `\.[a-zA-Z_-]?[a-zA-Z0-9_-]*`
+//! 3. local lambda arg: `\\\.[a-zA-Z_-]?[a-zA-Z0-9_-]*`
+//! 4. namespace dereference: `:[a-zA-Z][a-zA-Z0-9_-]*`
+//! 5. global assignment: `-<-|=<=|->-|=>=`
+//! 6. assertion: `-!-|=!=`
+//! 7. application: `<-|<=|=>|->`
+//! 8. case literal dereference: `\+[a-z]+`
+//! 9. case declaration: `\\\+[a-z]+`
+//! 10. case value assertion: `\+!([a-z]+)?`
+//! 11. value grouping: `(|)`
+//! 12. type grouping: `[|]`
+//! 13. arg separator: `/|,`
+//! 14. serial statement separator: `;`
+//! 15. numeric literal: `[0-9]+`
+//! 16. string literal: `"([^"]|\\")*"`
+//! 17. type spec operator: `[\(|\)]`
+//! 18. implicit arrow operator: `<~|~>`
+//! 19. abbreviated implicit operator: `~`
+//! 20. namespace editing: `{|}`
+//! 21. import highlight: `\$\$[a-zA-Z][a-zA-Z0-9_-]*`
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code. */

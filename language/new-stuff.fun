@@ -11,7 +11,8 @@ $Equatable[\.X\.Y] -<- [(
   # .equal[(\.x[.X]\.y[.Y] => .cmp[$Boolean])]
   # "/" happens to be equivalent to "=>" here, but "/" is used to signal that we are defining
   # a type, not describing any value-level function logic:
-  .equal[(\.x[.X]\.y[.Y] / .cmp[$Boolean])]
+  # .equal[(\.x[.X]\.y[.Y] / .cmp[$Boolean])]
+  .equal[(\.x[.X]\.y[.Y] / .[$Boolean])]
 )]
 
 # this is because "\.x" is actually a function accepting .x and returning .x:
@@ -24,7 +25,8 @@ $Equatable[$Integer/$Integer] -> (
   # we have to use the "=>" here, because "/" evaluates in parallel and we need ".x" and ".y" to be
   # bound when evaluating the expression for ".cmp". this is why it is useful to use "/" in type
   # signatures for functions where possible.
-  .equal(\.x[$Integer]\.y[$Integer] => .cmp($primitive$integer-equals(.x/.y)))
+  # .equal(\.x[$Integer]\.y[$Integer] => .cmp($integer-equals(.x/.y)))
+  .equal(\.x[$Integer]\.y[$Integer] => $integer-equals(.x/.y))
 )
 
 # value assertion:
