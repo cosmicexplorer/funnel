@@ -21,17 +21,16 @@
 //! 8. case literal dereference: `\+[a-z]+`
 //! 9. case declaration: `\\\+[a-z]+`
 //! 10. case value assertion: `\+!([a-z]+)?`
-//! 11. value grouping: `(|)`
-//! 12. type grouping: `[|]`
-//! 13. arg separator: `/|,`
-//! 14. serial statement separator: `;`
-//! 15. numeric literal: `[0-9]+`
-//! 16. string literal: `"([^"]|\\")*"`
-//! 17. type spec operator: `[\(|\)]`
-//! 18. implicit arrow operator: `<~|~>`
-//! 19. abbreviated implicit operator: `~`
-//! 20. namespace editing: `{|}`
-//! 21. import highlight: `\$\$[a-zA-Z][a-zA-Z0-9_-]*`
+//! 11. grouping: `(|)|[|]`
+//! 12. arg separator: `/|,`
+//! 13. serial statement separator: `;`
+//! 14. numeric literal: `[0-9]+`
+//! 15. string literal: `"([^"]|\\")*"`
+//! 16. type spec operator: `[\(|\)]`
+//! 17. implicit arrow operator: `<~|~>`
+//! 18. abbreviated implicit operator: `~`
+//! 19. namespace editing: `{|}`
+//! 20. import highlight: `\$\$[a-zA-Z][a-zA-Z0-9_-]*`
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code. */
@@ -75,7 +74,127 @@
 use chumsky::prelude::*;
 
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Direction {
+  Left,
+  Right,
+}
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Level {
+  Value,
+  r#Type,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Copy, Ord, PartialOrd)]
+pub enum Token<'a> {
+  GlobalDereference(&'a str),
+  LocalDereference(&'a str),
+  LocalLambdaArg(&'a str),
+  NamespaceDereference(&'a str),
+  GlobalAssignment(Direction, Level),
+  Assertion(Level),
+  Application(Direction, Level),
+  CaseLiteralDereference(&'a str),
+  CaseDeclaration(&'a str),
+  CaseValueAssertion(Option<&'a str>),
+  GroupStart(Level),
+  GroupClose(Level),
+  ArgSeparator,
+  SerialSeparator,
+  NumericLiteral(&'a str),
+  StringLiteral(&'a str),
+  TypeSpecStart,
+  TypeSpecClose,
+  ImplicitArrow(Direction),
+  AbbreviatedImplicitLink,
+  NamespaceStart,
+  NamespaceClose,
+  ImportHighlight(&'a str),
+}
+
+
+fn global_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-zA-Z][a-zA-Z0-9_-]*") }
+
+fn local_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-zA-Z_-][a-zA-Z0-9_-]*") }
+
+fn case_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-z]+") }
+
+
+fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
+  /* global_symbol().map(Token::GlobalDereference) */
+  choice((
+    just('$')
+      .ignore_then(global_symbol())
+      .map(Token::GlobalDereference),
+    just('.')
+      .ignore_then(local_symbol())
+      .map(Token::LocalDereference),
+    just("\\.")
+      .ignore_then(local_symbol())
+      .map(Token::LocalLambdaArg),
+    just(':')
+      .ignore_then(global_symbol())
+      .map(Token::NamespaceDereference),
+    choice((
+      just("-<-").to(Token::GlobalAssignment(Direction::Left, Level::r#Type)),
+      just("=<=").to(Token::GlobalAssignment(Direction::Left, Level::Value)),
+      just("->-").to(Token::GlobalAssignment(Direction::Right, Level::r#Type)),
+      just("=>=").to(Token::GlobalAssignment(Direction::Right, Level::Value)),
+    )),
+    choice((
+      just("-!-").to(Token::Assertion(Level::r#Type)),
+      just("=!=").to(Token::Assertion(Level::Value)),
+    )),
+    choice((
+      just("<-").to(Token::Application(Direction::Left, Level::r#Type)),
+      just("<=").to(Token::Application(Direction::Left, Level::Value)),
+      just("->").to(Token::Application(Direction::Right, Level::r#Type)),
+      just("=>").to(Token::Application(Direction::Right, Level::Value)),
+    )),
+    just('+')
+      .ignore_then(case_symbol())
+      .map(Token::CaseLiteralDereference),
+    just("\\+")
+      .ignore_then(case_symbol())
+      .map(Token::CaseDeclaration),
+    just("+!")
+      .ignore_then(case_symbol().or_not())
+      .map(Token::CaseValueAssertion),
+    choice((
+      just('(').to(Token::GroupStart(Level::Value)),
+      just(')').to(Token::GroupClose(Level::Value)),
+      just('[').to(Token::GroupStart(Level::r#Type)),
+      just(']').to(Token::GroupClose(Level::r#Type)),
+    )),
+    choice((just('/'), just(','))).to(Token::ArgSeparator),
+    just(';').to(Token::SerialSeparator),
+    regex("[0-9]+").map(Token::NumericLiteral),
+    just('"')
+      .ignore_then(regex("([^\"]|\\\")*"))
+      .then_ignore(just('"'))
+      .map(Token::StringLiteral),
+    choice((
+      just("[(").to(Token::TypeSpecStart),
+      just(")]").to(Token::TypeSpecClose),
+    )),
+    choice((
+      just("<~").to(Token::ImplicitArrow(Direction::Left)),
+      just("~>").to(Token::ImplicitArrow(Direction::Right)),
+    )),
+    just('~').to(Token::AbbreviatedImplicitLink),
+    choice((
+      just("{").to(Token::NamespaceStart),
+      just("}").to(Token::NamespaceClose),
+    )),
+    just("$$")
+      .ignore_then(global_symbol())
+      .map(Token::ImportHighlight),
+  ))
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum C {
   A,
   B,
