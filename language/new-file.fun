@@ -125,7 +125,7 @@ $Equatable[\.X\.Y] -<- [(
   \.equal[(\.x[.X]\.y[.Y] / .cmp[$Boolean])]
 )]
 
-# define an instance of the typeclass (not assigned to any named value, but now available in
+# define an instance of the typeclass (not boound to any named value, but now available in
 # implicit search scope):
 # $Equatable[.X[$Integer]/.Y[$Integer]] -> (
 $Equatable[$Integer, $Integer] -> (
@@ -176,7 +176,7 @@ $g(\.x[$Integer]) =<= [$Boolean](
   # now we look just as good as this fake infix code!
   # \+(\.- % 3 == 0) => +true
   # catch-all case:
-  \+- => +false
+  \+ => +false
 )
 
 # NB: right now, +cases with an initial capital are not allowed, as it does not seem to correspond
@@ -227,7 +227,21 @@ $f$g$h =!= $h($g($f(\.-)))
 $f(\.x[$Nat](0)) =<= .x$plus(3)
 $f =<= \.x[$Nat](0)$plus(3)
 
+# possible haskell-like function case syntax, but may be hard to implement:
+$List[\.T](\.n[$Nat]) -<- [(...)]
+$List[\.T](.n(0)) -<- [()]
+$List[\.T](.n(1)) -<- [(.x[.T])]
+$List[\.T](\.n) -<- [(.x[.T]/.xs[$List[.T](.n$decrement)])]
 
+# this definition would use only existing mechanics:
+$List[\.T](\.n[$Nat]) -<- .n+(
+  \+0 => [()]
+  \+1 => [(.x[.T])]
+  \+ => [(.x[.T]/.xs[$List[.T](.n$decrement)])]
+)
+
+# "repeating instances of some type" is probably worth making a primitive...
+$Vec[\.T](\.n[$Nat]) -<- [(...)]
 ###
 
 $equals <= [\.X, \.Y] -> {\.inst <~ $equatable[.X, .Y]} => (\.x, \.y) => .inst.equal(.x(.x), .y(.y))
