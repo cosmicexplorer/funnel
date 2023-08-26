@@ -1,0 +1,25 @@
+[workspace]
+members                 = [
+  "./language",
+]
+default-members         = [
+  "./language",
+]
+resolver                = "2"
+
+[workspace.package]
+version                 = "0.0.0"
+edition                 = "2021"
+authors                 = ["Danny McClanahan <dmcC2@hypnicjerk.ai>"]
+license                 = "GPL-3.0"
+
+keywords                = []
+categories              = []
+homepage                = "https://github.com/cosmicexplorer/funnel"
+repository              = "https://github.com/cosmicexplorer/funnel"
+
+[workspace.dependencies]
+
+[profile.release]
+strip                   = true
+lto                     = true
