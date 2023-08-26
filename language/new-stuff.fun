@@ -115,7 +115,7 @@ $submodule:inner:y =!= 4
 # import "$package:function" as "$function"
 $$package:$function
 # import "$package:function" as "$wow"
-$$package:$function$$wow
+$$package:function$wow
 
 # $functions can be composed via mere juxtaposition:
 [($f$g$h)] -!- [($h($g($f(\.-))))]
