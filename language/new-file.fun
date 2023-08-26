@@ -132,9 +132,9 @@ $Equatable[$Integer, $Integer] -> (
 )
 
 # value assertion:
-3 <!= 3
+3 =!= 3
 # type assertion:
-$Integer <!- [(3)]
+$Integer -!- [(3)]
 
 # define a method which accepts an implicit instance of the typeclass:
 $equals[\.X\.Y] <=
@@ -204,8 +204,8 @@ $f[\.T](\.x[.T] ~> .y[$Integer]) <= [$Integer](.y$plus(3))
   $z <= 5
 }
 # access nested modules via ":"
-$submodule:inner:x <!= 3
-$submodule:inner:y <!= 4
+$submodule:inner:x =!= 3
+$submodule:inner:y =!= 4
 # the contents of this submodule will be read from the neighboring file "submodule.fun"
 :submodule{+file}
 # read from an explicit file path
@@ -220,7 +220,9 @@ $$package:$function
 $$package:$function$$wow
 
 # $functions can be composed via mere juxtaposition:
-$f$g$h <!= $h($g($f(\.-)))
+$f$g$h =!= $h($g($f(\.-)))
+
+
 ###
 
 $equals <= [\.X, \.Y] -> {\.inst <~ $equatable[.X, .Y]} => (\.x, \.y) => .inst.equal(.x(.x), .y(.y))
