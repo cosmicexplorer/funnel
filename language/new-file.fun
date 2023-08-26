@@ -191,28 +191,33 @@ $f[\.T](\.x[.T]) <= \~convert[(\.x[.T] / .y[$Integer])] => [$Integer](convert(.x
 $f[\.T](\.x[.T] ~> .y[$Integer]) <= [$Integer](.y$plus(3))
 
 # modules and namespaces:
-$submodule {
-  $inner {
+:submodule {
+  :inner {
     $x <= 3
   }
   # submodules can be reopened after first declared:
-  $inner {
+  :inner {
     $y <= 4
   }
 }
-# access nested modules via "::"
-$submodule::inner::x <!= 3
-$submodule::inner::y <!= 4
+:submodule:inner {
+  $z <= 5
+}
+# access nested modules via ":"
+$submodule:inner:x <!= 3
+$submodule:inner:y <!= 4
 # the contents of this submodule will be read from the neighboring file "submodule.fun"
-$submodule{+file}
+:submodule{+file}
+# read from an explicit file path
+:submodule{+file("some-file.fun")}
 # the contents of this submodule will be read from the neighboring directory "submodule", with
 # central file name "mod.fun" (like mod.rs)
-$submodule{+dir}
+:submodule{+dir}
 
-# import "$package::function" as "$function"
-$$package::$function
-# import "$package::function" as "$wow"
-$$package::$function$$wow
+# import "$package:function" as "$function"
+$$package:$function
+# import "$package:function" as "$wow"
+$$package:$function$$wow
 
 # $functions can be composed via mere juxtaposition:
 $f$g$h <!= $h($g($f(\.-)))
