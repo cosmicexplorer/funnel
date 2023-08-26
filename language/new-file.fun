@@ -185,15 +185,22 @@ $Boolean <- [(
   \+false
 )]
 
-
 # implicit rule graph search (for conversions .T => $Integer):
 $f[\.T](\.x[.T]) <= \~convert[(\.x[.T] / .y[$Integer])] => [$Integer](convert(.x)$plus(3))
 # using shorthand for directly converting arguments:
 $f[\.T](\.x[.T] ~> .y[$Integer]) <= [$Integer](.y$plus(3))
 
-$C <- [(
-  .x
-)]
+# modules and namespaces:
+$submodule {
+  $inner {
+    $x <= 3
+  }
+}
+# access nested modules via "::"
+$submodule::inner::x <!= 3
+
+# $functions can be composed via mere juxtaposition:
+$f$g$h <!= $h($g($f(\.-)))
 ###
 
 $equals <= [\.X, \.Y] -> {\.inst <~ $equatable[.X, .Y]} => (\.x, \.y) => .inst.equal(.x(.x), .y(.y))
