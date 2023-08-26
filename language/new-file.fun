@@ -231,17 +231,23 @@ $f =<= \.x[$Nat](0)$plus(3)
 $List[\.T](\.n[$Nat]) -<- [(...)]
 $List[\.T](.n(0)) -<- [()]
 $List[\.T](.n(1)) -<- [(.x[.T])]
-$List[\.T](\.n) -<- [(.x[.T]/.xs[$List[.T](.n$decrement)])]
+$List[\.T](\.n) -<- [( .x[.T] / .xs[$List[.T](.n$decrement)] )]
 
 # this definition would use only existing mechanics:
 $List[\.T](\.n[$Nat]) -<- .n+(
   \+0 => [()]
   \+1 => [(.x[.T])]
-  \+ => [(.x[.T]/.xs[$List[.T](.n$decrement)])]
+  \+ => [( .x[.T] / .xs[$List[.T](.n$decrement)] )]
 )
 
-# "repeating instances of some type" is probably worth making a primitive...
-$Vec[\.T](\.n[$Nat]) -<- [(...)]
+# this is a built-in type for a length-1 array of .T instances:
+.T x 1 -!- [( .0[.T] )]
+# NB: note that this is the same type you get when returning a 2-tuple of .T instances already!
+.T x 2 -!- [( .0[.T] / .1[.T] )]
+# this is a type declaration for the built-in "x" operator, which created the above arrays via infix
+# invocation. "[(...)]" is similar to idris's "Type", in that it returns a promise to create a type
+# specification that can then be used in later type-level operations:
+x[\.T](\.n) -<- [(...)]
 ###
 
 $equals <= [\.X, \.Y] -> {\.inst <~ $equatable[.X, .Y]} => (\.x, \.y) => .inst.equal(.x(.x), .y(.y))
@@ -289,12 +295,12 @@ $f <= (\.a, \.b)
 -[$f] <- [\.a => \.b => -[(\.a, \.b)]]
 # The type of a statically-known literal includes the literal field values.
 -[$f(3, 4)] <- -[(\.a(3), \.b(4))]
--[$f(3)] <- [\.b => -[(\.a(3), \.b)]
+-[$f(3)] <- [\.b => -[(\.a(3), \.b)]]
 
 # `\.x => t` expands to `\.x => (.x(.x)) => t`
 
 $x <= (\.x[\.X])
-$x <- [[\.X] -> (\.x) => -[(\.x <- .X])]]
+$x <- [[\.X] -> (\.x) => -[(\.x <- .X)]]
 
 # $X is a "type struct", or a struct in type context.
 $X <- [\.x[\.X]]
