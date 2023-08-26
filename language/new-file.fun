@@ -112,6 +112,80 @@ $equatable <= [\.X, \.Y] -> (
   \.equal[(\.x[.X], \.y[.Y]) => $Boolean],
 )
 
+### new stuff:
+# a *type* is a specification which may *match* a *value*. "matching" refers to type resolution.
+# the [(...)] operator produces such a specification from a subset of the struct literal syntax:
+$A <- [(.x[$Integer])]
+
+# define a typeclass:
+$Equatable[\.X\.Y] <- [(
+  # \.equal <- [(\.x[.X]\.y[.Y]) => [(.cmp[$Boolean])]],
+  # [(...)] does not accept <= or =>, so we use / instead
+  \.equal[(\.x[.X]\.y[.Y] / .cmp[$Boolean])]
+)]
+
+# define an instance of the typeclass (not assigned to any named value, but now available in
+# implicit search scope):
+# $Equatable[.X[$Integer], .Y[$Integer]] -> (
+$Equatable[$Integer, $Integer] -> (
+  .equal(\.x[$Integer]\.y[$Integer] => .cmp($primitive$integer-equals(.x/.y)))
+)
+
+# value assertion:
+3 <!= 3
+# type assertion:
+$Integer <!- [(3)]
+
+# define a method which accepts an implicit instance of the typeclass:
+$equals[\.X\.Y] <=
+  # (\~inst[$Equatable[.X/.Y]], \.a[.X], \.b[.Y]}) =>
+  # (\.inst <~ [$Equatable[.X, .Y]]) =>
+  (\~inst[$Equatable[.X/.Y]]) =>
+  (\.a[.X]\.b[.Y]) =>
+    .inst.equal(.a/.b)
+    # .inst.equal(.a, .b)[(.cmp[$Boolean])]
+
+# semicolon/slash/colon used to sequence operations:
+# (the $Numeric[.T] instance is added in scope but without any name)
+$f[\.T] <= \~inst[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T];(
+# $f[\.T -> \~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T];(
+# "[x]y" or "(x)y" is necessary to use any variables bound in "x" in "y"; otherwise variables are
+# bound in parallel (?)
+# $f[[\.T]\~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T];(
+  ; .z <= $plus(.x/.y) /
+    .a <= $times(.x/.y)
+  ; .b <= $pow(.z/.a)
+  # : .ret($xor(.z/.b))
+  : $xor(.z/.b)
+)
+
+$g(\.x[$Integer]) <= [$Boolean](
+  # \+0 => $boolean+true
+  \+0 => +true
+  \+1 => +false
+  # "$equals(...)+!true" here is asserting that the result of $equals(...) is the +true variant. If
+  # that assertion fails, the case fails, and we move on to the next one.
+  \+($mod(\.-, 3) => $equals(\.-, 0)+!true) => +true
+  # use "+!" as shorthand for "+!true"? maybe introduce a default enum case and use it for this?
+  \+($mod(\.-, 3) => $equals(\.-, 0)+!) => +true
+  # "x$f(...)" is converted into "$f(x, ...)":
+  \+($mod(\.-, 3)$equals(0)+!) => +true
+  # we can take this to the extreme:
+  \+(\.-$mod(3)$equals(0)+!) => +true
+  # now we look just as good as this fake infix code!
+  # \+(\.- % 3 == 0) => +true
+  # catch-all case:
+  \+- => +false
+)
+
+# NB: right now, +cases with an initial capital are not allowed, as it does not seem to correspond
+# to the values/types analogy we have for ".[aA]" and "$[aA]".
+$Boolean <- [(
+  \+true
+  \+false
+)]
+###
+
 $equals <= [\.X, \.Y] -> {\.inst <~ $equatable[.X, .Y]} => (\.x, \.y) => .inst.equal(.x(.x), .y(.y))
 # Or:
 $equals <= [\.X, \.Y] -> {\.inst[$equatable[.X, .Y]]} => (\.a[.X], \.b[.Y]) => .inst.equal(.a, .b)
