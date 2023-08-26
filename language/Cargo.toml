@@ -1,13 +1,15 @@
 [package]
 name                    = "funnel-lang"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
+version.workspace       = true
+edition.workspace       = true
+authors.workspace       = true
+license.workspace       = true
 
-keywords.workspace = true
-categories.workspace = true
-homepage.workspace = true
-repository.workspace = true
+keywords.workspace      = true
+categories.workspace    = true
+homepage.workspace      = true
+repository.workspace    = true
 
 [dependencies]
+ariadne                 = "0.3"
+chumsky                 = "1.0.0-alpha.4"

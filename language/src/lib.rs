@@ -49,7 +49,20 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-pub fn add(left: usize, right: usize) -> usize { left + right }
+use chumsky::prelude::*;
+
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum C {
+  A,
+  B,
+}
+
+
+pub fn parser<'a>() -> impl Parser<'a, &'a str, C> {
+  choice((just('a').to(C::A), just('b').to(C::B)))
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -57,7 +70,16 @@ mod tests {
 
   #[test]
   fn it_works() {
-    let result = add(2, 2);
-    assert_eq!(result, 4);
+    let (result, errs) = parser().parse("a").into_output_errors();
+    assert!(errs.is_empty());
+    assert_eq!(result.unwrap(), C::A);
+
+    let (result, errs) = parser().parse("b").into_output_errors();
+    assert!(errs.is_empty());
+    assert_eq!(result.unwrap(), C::B);
+
+    let (result, errs) = parser().parse("c").into_output_errors();
+    assert!(result.is_none());
+    assert!(!errs.is_empty());
   }
 }
