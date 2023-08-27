@@ -74,6 +74,7 @@
 use chumsky::{
   input::{BorrowInput, Stream, ValueInput},
   prelude::*,
+  text::whitespace,
 };
 use displaydoc::Display;
 use thiserror::Error;
@@ -103,16 +104,17 @@ pub enum Token<'a> {
   GlobalDereference(&'a str),
   LocalDereference(&'a str),
   LocalLambdaArg(&'a str),
-  NamespaceDereference(&'a str),
+  NamespaceDereference(&'a str), /* TODO */
   GlobalAssignment(Direction, Level),
   Assertion(Level),
   Application(Direction, Level),
   CaseLiteralDereference(&'a str),
+  /* FIXME: what about the case where it matches a value, like \+(...)? */
   CaseDeclaration(&'a str),
   CaseValueAssertion(Option<&'a str>),
   GroupStart(Level),
   GroupClose(Level),
-  ArgSeparator,
+  ParallelSeparator,
   SerialSeparator,
   NumericLiteral(&'a str),
   StringLiteral(&'a str),
@@ -123,6 +125,7 @@ pub enum Token<'a> {
   NamespaceStart,
   NamespaceClose,
   ImportHighlight(&'a str),
+  Whitespace,
 }
 
 fn global_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-zA-Z][a-zA-Z0-9_-]*") }
@@ -178,7 +181,7 @@ fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
       just('[').to(Token::GroupStart(Level::r#Type)),
       just(']').to(Token::GroupClose(Level::r#Type)),
     )),
-    choice((just('/'), just(','))).to(Token::ArgSeparator),
+    choice((just('/'), just(','))).to(Token::ParallelSeparator),
     just(';').to(Token::SerialSeparator),
     regex("[0-9]+").map(Token::NumericLiteral),
     just('"')
@@ -201,6 +204,7 @@ fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
     just("$$")
       .ignore_then(global_symbol())
       .map(Token::ImportHighlight),
+    whitespace().to(Token::Whitespace),
   ))
 }
 
@@ -258,7 +262,9 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
     Token::Assertion(level) => level,
   };
   parse_expression()
+    .then_ignore(just(Token::Whitespace).or_not())
     .then(assertions)
+    .then_ignore(just(Token::Whitespace).or_not())
     .then(parse_expression())
     .validate(|((lhs, level), rhs), span, emitter| {
       let lhs_level = lhs.level();
@@ -276,9 +282,43 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
 
 
 #[derive(Debug, Clone)]
+pub enum Application<'a> {
+  Value(Box<Expression<'a>>, Box<Expression<'a>>, Direction),
+  r#Type(Box<Expression<'a>>, Box<Expression<'a>>, Direction),
+}
+
+
+/* FIXME: add adjacent grouping applications (like .x(0))! */
+fn applications<'a, I>() -> impl Parser<'a, I, Application<'a>>
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
+  let applications = select_ref! {
+    Token::Application(direction, level) => (direction, level),
+  };
+  parse_expression()
+    .then_ignore(just(Token::Whitespace).or_not())
+    .then(applications)
+    .then_ignore(just(Token::Whitespace).or_not())
+    .then(parse_expression())
+    .validate(|((lhs, (direction, level)), rhs), span, emitter| {
+      let lhs_level = lhs.level();
+      let rhs_level = rhs.level();
+      if lhs_level == *level && *level == rhs_level {
+        match level {
+          Level::Value => Application::Value(Box::new(lhs), Box::new(rhs), *direction),
+          Level::r#Type => Application::r#Type(Box::new(lhs), Box::new(rhs), *direction),
+        }
+      } else {
+        todo!("signal that the type/value levels of exprs didn't align")
+      }
+    })
+}
+
+
+#[derive(Debug, Clone)]
 pub enum Expression<'a> {
   Name(Name<'a>),
   Assertion(Assertion<'a>),
+  Application(Application<'a>),
 }
 
 impl<'a> HasLevel for Expression<'a> {
@@ -286,7 +326,7 @@ impl<'a> HasLevel for Expression<'a> {
 }
 
 fn parse_expression<'a, I>() -> impl Parser<'a, I, Expression<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
   todo!()
 }
 
@@ -294,6 +334,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 #[derive(Debug, Clone)]
 pub enum TopLevelStatement {
   GlobalAssignment,
+  SimpleExpression,
   NamespaceExpansion,
   ImportHighlight,
 }
