@@ -19,6 +19,8 @@ homepage                = "https://github.com/cosmicexplorer/funnel"
 repository              = "https://github.com/cosmicexplorer/funnel"
 
 [workspace.dependencies]
+displaydoc              = "0.2.4"
+thiserror               = "1.0.30"
 
 [profile.release]
 strip                   = true

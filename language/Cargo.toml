@@ -13,3 +13,5 @@ repository.workspace    = true
 [dependencies]
 ariadne                 = "0.3"
 chumsky                 = { version = "1.0.0-alpha.4", features = ["regex"] }
+displaydoc.workspace    = true
+thiserror.workspace     = true

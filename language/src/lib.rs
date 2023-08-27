@@ -75,6 +75,15 @@ use chumsky::{
   input::{BorrowInput, Stream, ValueInput},
   prelude::*,
 };
+use displaydoc::Display;
+use thiserror::Error;
+
+
+#[derive(Debug, Display, Error)]
+pub enum LanguageError {
+  /// idk
+  Idk,
+}
 
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
@@ -231,6 +240,11 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
 }
 
 
+pub trait HasLevel {
+  fn level(&self) -> Level;
+}
+
+
 #[derive(Debug, Clone)]
 pub enum Assertion<'a> {
   Value(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -238,16 +252,42 @@ pub enum Assertion<'a> {
 }
 
 
-/* fn assertions<'a, I>() -> impl Parser<'a, I, Assertion<'a>> */
-/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> { */
-/* let */
-/* } */
+fn assertions<'a, I>() -> impl Parser<'a, I, Assertion<'a>>
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
+  let assertions = select_ref! {
+    Token::Assertion(level) => level,
+  };
+  parse_expression()
+    .then(assertions)
+    .then(parse_expression())
+    .validate(|((lhs, level), rhs), span, emitter| {
+      let lhs_level = lhs.level();
+      let rhs_level = rhs.level();
+      if lhs_level == *level && *level == rhs_level {
+        match level {
+          Level::Value => Assertion::Value(Box::new(lhs), Box::new(rhs)),
+          Level::r#Type => Assertion::r#Type(Box::new(lhs), Box::new(rhs)),
+        }
+      } else {
+        todo!("signal that the type/value levels of exprs didn't align")
+      }
+    })
+}
 
 
 #[derive(Debug, Clone)]
 pub enum Expression<'a> {
   Name(Name<'a>),
   Assertion(Assertion<'a>),
+}
+
+impl<'a> HasLevel for Expression<'a> {
+  fn level(&self) -> Level { todo!() }
+}
+
+fn parse_expression<'a, I>() -> impl Parser<'a, I, Expression<'a>>
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+  todo!()
 }
 
 
