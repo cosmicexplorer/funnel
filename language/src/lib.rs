@@ -71,7 +71,10 @@
 /* Arc<Mutex> can be more clear than needing to grok Orderings. */
 #![allow(clippy::mutex_atomic)]
 
-use chumsky::prelude::*;
+use chumsky::{
+  input::{BorrowInput, Stream, ValueInput},
+  prelude::*,
+};
 
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
@@ -112,7 +115,6 @@ pub enum Token<'a> {
   NamespaceClose,
   ImportHighlight(&'a str),
 }
-
 
 fn global_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-zA-Z][a-zA-Z0-9_-]*") }
 
@@ -191,6 +193,69 @@ fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
       .ignore_then(global_symbol())
       .map(Token::ImportHighlight),
   ))
+}
+
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum EvalDirection {
+  Dereference,
+  DeclareLambdaArg,
+}
+
+
+#[derive(Debug, Clone)]
+pub enum Name<'a> {
+  Global(&'a str, Vec<&'a str>),
+  Local(&'a str, EvalDirection),
+}
+
+
+fn name_values<'a, I>() -> impl Parser<'a, I, Name<'a>>
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
+  let local_names = select_ref! {
+    Token::LocalDereference(name) => Name::Local(name, EvalDirection::Dereference),
+    Token::LocalLambdaArg(name) => Name::Local(name, EvalDirection::DeclareLambdaArg),
+  };
+  let global_name = select_ref! {
+    Token::GlobalDereference(name) => name,
+  };
+  let namespace_dereference = select_ref! {
+    Token::NamespaceDereference(name) => *name,
+  };
+  choice((
+    local_names,
+    global_name
+      .then(namespace_dereference.repeated().collect::<Vec<_>>())
+      .map(|(global_name, namespaces)| Name::Global(global_name, namespaces)),
+  ))
+}
+
+
+#[derive(Debug, Clone)]
+pub enum Assertion<'a> {
+  Value(Box<Expression<'a>>, Box<Expression<'a>>),
+  r#Type(Box<Expression<'a>>, Box<Expression<'a>>),
+}
+
+
+/* fn assertions<'a, I>() -> impl Parser<'a, I, Assertion<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> { */
+/* let */
+/* } */
+
+
+#[derive(Debug, Clone)]
+pub enum Expression<'a> {
+  Name(Name<'a>),
+  Assertion(Assertion<'a>),
+}
+
+
+#[derive(Debug, Clone)]
+pub enum TopLevelStatement {
+  GlobalAssignment,
+  NamespaceExpansion,
+  ImportHighlight,
 }
 
 
