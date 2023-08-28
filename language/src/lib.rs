@@ -9,28 +9,6 @@
  */
 
 //! ???
-//!
-//! # Tokens
-//! 1. global dereference: `\$[a-zA-Z][a-zA-Z0-9_-]*`
-//! 2. local dereference: `\.[a-zA-Z_-]?[a-zA-Z0-9_-]*`
-//! 3. local lambda arg: `\\\.[a-zA-Z_-]?[a-zA-Z0-9_-]*`
-//! 4. namespace dereference: `:[a-zA-Z][a-zA-Z0-9_-]*`
-//! 5. global assignment: `-<-|=<=|->-|=>=`
-//! 6. assertion: `-!-|=!=`
-//! 7. application: `<-|<=|=>|->`
-//! 8. case literal dereference: `\+[a-z]+`
-//! 9. case declaration: `\\\+[a-z]+`
-//! 10. case value assertion: `\+!([a-z]+)?`
-//! 11. grouping: `(|)|[|]`
-//! 12. arg separator: `/|,`
-//! 13. serial statement separator: `;`
-//! 14. numeric literal: `[0-9]+`
-//! 15. string literal: `"([^"]|\\")*"`
-//! 16. type spec operator: `[\(|\)]`
-//! 17. implicit arrow operator: `<~|~>`
-//! 18. abbreviated implicit operator: `~`
-//! 19. namespace editing: `{|}`
-//! 20. import highlight: `\$\$[a-zA-Z][a-zA-Z0-9_-]*`
 
 /* These clippy lint descriptions are purely non-functional and do not affect the functionality
  * or correctness of the code. */
@@ -447,6 +425,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
       immediates,
       application,
     })
+    /* compilation fails with a type too long error if this is omitted lol */
     .boxed()
 }
 
@@ -709,8 +688,47 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 
 
 #[derive(Debug, Clone)]
+pub struct NumericLiteral<'a> {
+  pub value: &'a str,
+}
+
+fn numbers<'a, I>() -> impl Parser<'a, I, NumericLiteral<'a>>+Clone
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+  select! {
+    Token::NumericLiteral(value) => NumericLiteral { value },
+  }
+}
+
+
+#[derive(Debug, Clone)]
+pub struct StringLiteral<'a> {
+  pub value: &'a str,
+}
+
+fn strings<'a, I>() -> impl Parser<'a, I, StringLiteral<'a>>+Clone
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+  select! {
+    Token::StringLiteral(value) => StringLiteral { value },
+  }
+}
+
+
+#[derive(Debug, Clone)]
+pub enum Literal<'a> {
+  Num(NumericLiteral<'a>),
+  Str(StringLiteral<'a>),
+}
+
+fn literals<'a, I>() -> impl Parser<'a, I, Literal<'a>>+Clone
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+  choice((numbers().map(Literal::Num), strings().map(Literal::Str)))
+}
+
+
+#[derive(Debug, Clone)]
 pub enum Expression<'a> {
   Name(Name<'a>),
+  Lit(Literal<'a>),
   Assertion(Assertion<'a>),
   Arrow(ArrowApplication<'a>),
   Immediate(ImmediateApplication<'a>),
@@ -722,6 +740,7 @@ fn expressions<'a, I>() -> impl Parser<'a, I, Expression<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   recursive(|expressions| {
     choice((
+      literals().map(Expression::Lit),
       names().map(Expression::Name),
       immediate_applications().map(Expression::Immediate),
       parallel_joins().map(Expression::Join),
