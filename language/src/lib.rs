@@ -184,7 +184,7 @@ fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct NamespaceComponent<'a> {
   pub component: &'a str,
 }
@@ -216,7 +216,7 @@ fn symbol_level(s: &str) -> Level {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GlobalName<'a> {
   pub name: &'a str,
   pub prefix: Vec<NamespaceComponent<'a>>,
@@ -263,7 +263,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Name<'a> {
   Global(GlobalName<'a>),
   Local(LocalName<'a>),
@@ -280,10 +280,30 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
+macro_rules! impl_eq_given_fields {
+  ($t:ident, $($field:ident),+) => {
+    impl<'a> ::core::cmp::PartialEq for $t<'a> {
+      fn eq(&self, other: &Self) -> bool {
+        $(
+          if self.$field != other.$field {
+            return false;
+          }
+        )+
+        true
+      }
+    }
+
+    impl<'a> ::core::cmp::Eq for $t<'a> {}
+  };
+}
+
+
 #[derive(Debug, Clone)]
 pub struct ParallelJoin<'a> {
   pub exprs: Vec<Box<Expression<'a>>>,
 }
+
+impl_eq_given_fields![ParallelJoin, exprs];
 
 fn parallel_joins<'a, I>() -> impl Parser<'a, I, ParallelJoin<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
@@ -338,6 +358,8 @@ pub struct Assertion<'a> {
   pub level: Level,
 }
 
+impl_eq_given_fields![Assertion, lhs, rhs, level];
+
 fn assertions<'a, I>() -> impl Parser<'a, I, Assertion<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   let assertions = select! {
@@ -364,6 +386,8 @@ pub struct ArrowApplication<'a> {
   pub direction: Direction,
   pub level: Level,
 }
+
+impl_eq_given_fields![ArrowApplication, source, target, direction, level];
 
 fn arrow_applications<'a, I>() -> impl Parser<'a, I, ArrowApplication<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
@@ -399,6 +423,8 @@ pub struct CaseDeclaration<'a> {
   pub immediates: Vec<LeftwardImmediateSource<'a>>,
   pub application: Option<(Level, Box<Expression<'a>>)>,
 }
+
+impl_eq_given_fields![CaseDeclaration, name, immediates, application];
 
 fn case_declarations<'a, I>() -> impl Parser<'a, I, CaseDeclaration<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
@@ -456,7 +482,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CaseDeconstruction<'a> {
   pub cases: Vec<CaseDeclaration<'a>>,
   pub level: Level,
@@ -502,6 +528,8 @@ pub struct SerialGroup<'a> {
   pub return_value: Box<Expression<'a>>,
   pub level: Level,
 }
+
+impl_eq_given_fields![SerialGroup, ordered_statements, return_value, level];
 
 fn serial_groups<'a, I>() -> impl Parser<'a, I, SerialGroup<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
@@ -563,6 +591,8 @@ pub struct BasicGroup<'a> {
   pub level: Level,
 }
 
+impl_eq_given_fields![BasicGroup, inner, level];
+
 fn basic_groups<'a, I>() -> impl Parser<'a, I, BasicGroup<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   fn parse_inner<'a, I>() -> impl Parser<'a, I, Expression<'a>>+Clone
@@ -597,6 +627,8 @@ pub struct TypeSpec<'a> {
   pub inner: Box<Expression<'a>>,
 }
 
+impl_eq_given_fields![TypeSpec, inner];
+
 fn type_specs<'a, I>() -> impl Parser<'a, I, TypeSpec<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   just(Token::TypeSpecStart)
@@ -610,7 +642,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Group<'a> {
   Basic(BasicGroup<'a>),
   Serial(SerialGroup<'a>),
@@ -629,7 +661,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct LocalNameDereference<'a> {
   pub name: &'a str,
 }
@@ -644,7 +676,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 
 
 /// things that apply to their left
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum LeftwardImmediateSource<'a> {
   /// e.g. "$f.x" retrieves the ".x" field from the value "$f"
   LocalNameDereference(LocalNameDereference<'a>),
@@ -675,6 +707,8 @@ pub struct ImmediateApplication<'a> {
   pub source: LeftwardImmediateSource<'a>,
 }
 
+impl_eq_given_fields![ImmediateApplication, target, source];
+
 fn immediate_applications<'a, I>() -> impl Parser<'a, I, ImmediateApplication<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   expressions()
@@ -687,7 +721,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct NumericLiteral<'a> {
   pub value: &'a str,
 }
@@ -700,7 +734,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct StringLiteral<'a> {
   pub value: &'a str,
 }
@@ -713,7 +747,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Literal<'a> {
   Num(NumericLiteral<'a>),
   Str(StringLiteral<'a>),
@@ -829,5 +863,38 @@ mod tests {
       name: "x",
       eval_direction: EvalDirection::Dereference
     });
+  }
+
+  #[test]
+  fn parse_local_into_name() {
+    let token_stream = tokenize().repeated().stream(".x").into_result().unwrap();
+    let result = names().parse(token_stream).into_result().unwrap();
+    assert!(matches![
+      result,
+      Name::Local(LocalName {
+        name: "x",
+        eval_direction: EvalDirection::Dereference
+      }),
+    ]);
+  }
+
+  #[test]
+  fn parse_expr_local_name() {
+    let token_stream = tokenize().repeated().stream(".x").into_result().unwrap();
+    let result = expressions().parse(token_stream).into_result().unwrap();
+    assert_eq!(
+      result,
+      Expression::Name(Name::Local(LocalName {
+        name: "x",
+        eval_direction: EvalDirection::Dereference
+      }))
+    );
+    /* assert!(matches![ */
+    /* result, */
+    /* Expression::Name(Name::Local(LocalName { */
+    /* name: "x", */
+    /* eval_direction: EvalDirection::Dereference */
+    /* })) */
+    /* ]); */
   }
 }
