@@ -43,21 +43,24 @@ $equals[\.X\.Y] =<=
     .inst.equal(.a/.b)
     # .inst.equal(.a, .b)[(.cmp[$Boolean])]
 
+# alternatively, in a single line:
+$equals[\.X\.Y](\.inst~[$Equatable[.X/.Y]])(\.a[.X]\.b[.Y]) =<= .inst.equal(.a/.b)
+
 # semicolon/slash/colon used to sequence operations:
 # (the $Numeric[.T] instance is added in scope but without any name)
-# $f[\.T -> \~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T];(
+# $f[\.T -> \~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T] -> ;(
 # "[x]y" or "(x)y" is necessary to use any variables bound in "x" in "y"; otherwise variables are
 # bound in parallel (?)
-# $f[[\.T]\~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T];(
-$f[\.T] =<= \.inst~[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T];(
+# $f[[\.T]\~$Numeric[.T]] <= \.x[.T]\.y[.T] => [.T] -> ;(
+$f[\.T] =<= \.inst~[$Numeric[.T]] => \.x[.T]\.y[.T] => [.T] -> ;(
   ; .z <= $plus(.x/.y) /
     .a <= $times(.x/.y)
   ; .b <= $pow(.z/.a)
   # : .ret($xor(.z/.b))
-  : $xor(.z/.b)
+  : $xor(.z/.b)[.T]
 )
 
-$g(\.x[$Integer]) =<= [$Boolean](
+$g(\.x[$Integer]) =<= [$Boolean] -> (
   # \+0 => $boolean+true
   \+0 => +true
   \+1 => +false
@@ -78,15 +81,21 @@ $g(\.x[$Integer]) =<= [$Boolean](
 
 # NB: right now, +cases with an initial capital are not allowed, as it does not seem to correspond
 # to the values/types analogy we have for ".[aA]" and "$[aA]".
-$Boolean -<- [(
+$Boolean -<- [(+(
   \+true
   \+false
-)]
+))]
+
+$C -<- [(+(
+  \+a(\.x)
+  \+b
+  \+c[\.T](\.x[.T])
+))]
 
 # implicit rule graph search (for conversions .T => $Integer):
-$f[\.T](\.x[.T]) =<= \.convert~[(\.x[.T] / .y[$Integer])] => [$Integer](.convert(.x)$plus(3))
+$f[\.T](\.x[.T]) =<= \.convert~[(\.x[.T] / .y[$Integer])] => (.convert(.x)$plus(3))[$Integer]
 # using shorthand for directly converting arguments:
-$f[\.T](\.x[.T] ~> .y[$Integer]) =<= [$Integer](.y$plus(3))
+$f[\.T](\.x[.T] ~> .y[$Integer]) =<= (.y$plus(3))[$Integer]
 
 # modules and namespaces:
 :submodule {
@@ -102,8 +111,10 @@ $f[\.T](\.x[.T] ~> .y[$Integer]) =<= [$Integer](.y$plus(3))
   $z =<= 5
 }
 # access nested modules via ":"
-$submodule:inner:x =!= 3
-$submodule:inner:y =!= 4
+:submodule:inner$x =!= 3
+:submodule:inner$y =!= 4
+# resolve from the global scope with "::"
+::submodule:inner$y =!= 4
 # the contents of this submodule will be read from the neighboring file "submodule.fun"
 :submodule{+file}
 # read from an explicit file path
@@ -113,9 +124,9 @@ $submodule:inner:y =!= 4
 :submodule{+dir}
 
 # import "$package:function" as "$function"
-$$package:$function
+$:package:$function
 # import "$package:function" as "$wow"
-$$package:function$wow
+$:package:function$wow
 
 # $functions can be composed via mere juxtaposition:
 [($f$g$h)] -!- [($h($g($f(\.-))))]
@@ -131,6 +142,7 @@ $List[\.T](.n(1)) -<- [(.x[.T])]
 $List[\.T](\.n) -<- [( .x[.T] / .xs[$List[.T](.n$decrement)] )]
 
 # this definition would use only existing mechanics:
+$List[\.T](\.n[$Nat]) -<- [(...)]
 $List[\.T](\.n[$Nat]) -<- .n+(
   \+0 => [()]
   \+1 => [(.x[.T])]
