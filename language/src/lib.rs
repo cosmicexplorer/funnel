@@ -1394,16 +1394,18 @@ impl<'a> RecursivelyParseable<'a> for NamespaceEdit<'a> {
 }
 
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Default)]
 pub enum LiftStatus {
+  #[default]
   NotLifted,
   Lifted,
 }
 
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Default)]
 pub enum NamespaceRewriteStatus<'a> {
   Rewritten(NamespaceComponent<'a>),
+  #[default]
   NotRewritten,
 }
 
@@ -1456,9 +1458,10 @@ impl<'a> TokenParseable<'a> for IntermediateImportComponent<'a> {
 }
 
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd, Default)]
 pub enum ValueRewriteStatus<'a> {
   Rewritten(&'a str),
+  #[default]
   NotRewritten,
 }
 
@@ -1723,5 +1726,126 @@ mod tests {
         eval_direction: EvalDirection::Dereference
       }))
     );
+  }
+
+  #[test]
+  fn parse_import_highlight() {
+    let result = Token::parser()
+      .repeated()
+      .collect::<Vec<_>>()
+      .parse("<:package>:a{<:module, <$function, :inner-mod{<$f > $h, <:mod>:other-mod{<$g}}}")
+      .into_result()
+      .unwrap();
+    assert_eq!(result, vec![
+      Token::ImportLift,
+      Token::NamespaceDereference("package"),
+      Token::ImportEdit,
+      Token::NamespaceDereference("a"),
+      Token::NamespaceStart,
+      Token::ImportLift,
+      Token::NamespaceDereference("module"),
+      Token::ParallelSeparator,
+      Token::Whitespace,
+      Token::ImportLift,
+      Token::GlobalDereference("function"),
+      Token::ParallelSeparator,
+      Token::Whitespace,
+      Token::NamespaceDereference("inner-mod"),
+      Token::NamespaceStart,
+      Token::ImportLift,
+      Token::GlobalDereference("f"),
+      Token::Whitespace,
+      Token::ImportEdit,
+      Token::Whitespace,
+      Token::GlobalDereference("h"),
+      Token::ParallelSeparator,
+      Token::Whitespace,
+      Token::ImportLift,
+      Token::NamespaceDereference("mod"),
+      Token::ImportEdit,
+      Token::NamespaceDereference("other-mod"),
+      Token::NamespaceStart,
+      Token::ImportLift,
+      Token::GlobalDereference("g"),
+      Token::NamespaceClose,
+      Token::NamespaceClose,
+      Token::NamespaceClose,
+    ]);
+
+    let token_stream = Token::parser()
+      .repeated()
+      .stream(
+        "<:package>:a{<:module, <$function, :inner-mod{<$f > $h,
+    <:mod>:other-mod{<$g}}}",
+      )
+      .into_result()
+      .unwrap();
+    let result = ImportHighlight::parser()
+      .parse(token_stream)
+      .into_result()
+      .unwrap();
+    assert_eq!(result, ImportHighlight {
+      prefix: vec![IntermediateImportComponent {
+        name: NamespaceComponent {
+          component: "package",
+        },
+        /* The top-level package is not marked as "lifted", because this would be a tautology. */
+        lifted: LiftStatus::NotLifted,
+        rewritten: NamespaceRewriteStatus::Rewritten(NamespaceComponent { component: "a" }),
+      }],
+      tail: Some(ImportTail {
+        components: vec![
+          ImportTailComponent::Namespace(
+            IntermediateImportComponent {
+              name: NamespaceComponent {
+                component: "module"
+              },
+              lifted: LiftStatus::Lifted,
+              rewritten: NamespaceRewriteStatus::NotRewritten,
+            },
+            None
+          ),
+          ImportTailComponent::Value(TerminalImportComponent {
+            name: "function",
+            lifted: LiftStatus::Lifted,
+            rewritten: ValueRewriteStatus::NotRewritten,
+          }),
+          ImportTailComponent::Namespace(
+            IntermediateImportComponent {
+              name: NamespaceComponent {
+                component: "inner-mod"
+              },
+              lifted: LiftStatus::NotLifted,
+              rewritten: NamespaceRewriteStatus::NotRewritten,
+            },
+            Some(Box::new(ImportTail {
+              components: vec![
+                ImportTailComponent::Value(TerminalImportComponent {
+                  name: "f",
+                  lifted: LiftStatus::Lifted,
+                  rewritten: ValueRewriteStatus::Rewritten("h"),
+                }),
+                ImportTailComponent::Namespace(
+                  IntermediateImportComponent {
+                    name: NamespaceComponent { component: "mod" },
+                    lifted: LiftStatus::Lifted,
+                    rewritten: NamespaceRewriteStatus::Rewritten(NamespaceComponent {
+                      component: "other-mod"
+                    })
+                  },
+                  Some(Box::new(ImportTail {
+                    components: vec![ImportTailComponent::Value(TerminalImportComponent {
+                      name: "g",
+                      lifted: LiftStatus::Lifted,
+                      rewritten: ValueRewriteStatus::NotRewritten,
+                    })]
+                  }))
+                ),
+              ]
+            }))
+          ),
+        ]
+      }),
+    });
   }
 }
