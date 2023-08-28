@@ -113,7 +113,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "chumsky"
 version = "1.0.0-alpha.4"
-source = "git+https://github.com/cosmicexplorer/chumsky?rev=aed7d5d92b3091897af4c2b5f005008cb14be6fe#aed7d5d92b3091897af4c2b5f005008cb14be6fe"
+source = "git+https://github.com/cosmicexplorer/chumsky?rev=e7ad6208491f48696fe48e4d36c13b77bc6403ed#e7ad6208491f48696fe48e4d36c13b77bc6403ed"
 dependencies = [
  "hashbrown 0.14.0",
  "regex-automata",
