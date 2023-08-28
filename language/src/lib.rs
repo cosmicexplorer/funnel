@@ -630,33 +630,46 @@ impl<'a> RecursivelyParseable<'a> for UnnamedCaseDeclaration<'a> {
 
 
 trait LeveledGroup<'a> {
-  fn value_group_start<I>() -> Boxed<'a, 'a, I, (), extra::Default>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
-    select! {
+  fn within_value_group<I, T>(
+    inner: Boxed<'a, 'a, I, T, extra::Default>,
+  ) -> Boxed<'a, 'a, I, T, extra::Default>
+  where
+    I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>,
+    T: 'a,
+  {
+    let value_group_start = select! {
       Token::GroupStart(Level::Value) => (),
-    }
-    .boxed()
-  }
-  fn type_group_start<I>() -> Boxed<'a, 'a, I, (), extra::Default>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
-    select! {
-      Token::GroupStart(Level::r#Type) => (),
-    }
-    .boxed()
-  }
-  fn value_group_end<I>() -> Boxed<'a, 'a, I, (), extra::Default>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
-    select! {
+    };
+    let value_group_end = select! {
       Token::GroupClose(Level::Value) => (),
-    }
-    .boxed()
+    };
+    inner
+      .delimited_by(
+        value_group_start.then(just(Token::Whitespace).or_not()),
+        just(Token::Whitespace).or_not().then(value_group_end),
+      )
+      .boxed()
   }
-  fn type_group_end<I>() -> Boxed<'a, 'a, I, (), extra::Default>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
-    select! {
+
+  fn within_type_group<I, T>(
+    inner: Boxed<'a, 'a, I, T, extra::Default>,
+  ) -> Boxed<'a, 'a, I, T, extra::Default>
+  where
+    I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>,
+    T: 'a,
+  {
+    let type_group_start = select! {
+      Token::GroupStart(Level::r#Type) => (),
+    };
+    let type_group_end = select! {
       Token::GroupClose(Level::r#Type) => (),
-    }
-    .boxed()
+    };
+    inner
+      .delimited_by(
+        type_group_start.then(just(Token::Whitespace).or_not()),
+        just(Token::Whitespace).or_not().then(type_group_end),
+      )
+      .boxed()
   }
 }
 
@@ -709,18 +722,18 @@ impl<'a> CaseDeconstruction<'a> {
 
     choice((
       just(Token::FreeCaseMarker)
-        .ignore_then(Self::value_group_start())
-        .ignore_then(parse_inner(expressions.clone()))
-        .then_ignore(Self::value_group_end())
+        .ignore_then(Self::within_value_group(
+          parse_inner(expressions.clone()).boxed(),
+        ))
         .map(|(cases, default_case)| CaseDeconstruction {
           cases,
           default_case,
           level: Level::Value,
         }),
       just(Token::FreeCaseMarker)
-        .ignore_then(Self::type_group_start())
-        .ignore_then(parse_inner(expressions))
-        .then_ignore(Self::type_group_end())
+        .ignore_then(Self::within_type_group(
+          parse_inner(expressions.clone()).boxed(),
+        ))
         .map(|(cases, default_case)| CaseDeconstruction {
           cases,
           default_case,
@@ -794,18 +807,16 @@ impl<'a> SerialGroup<'a> {
 
     choice((
       just(Token::SerialSeparator)
-        .ignore_then(Self::value_group_start())
-        .ignore_then(parse_inner(expressions.clone()))
-        .then_ignore(Self::value_group_end())
+        .ignore_then(Self::within_value_group(
+          parse_inner(expressions.clone()).boxed(),
+        ))
         .map(|(statements, ret)| SerialGroup {
           ordered_statements: statements.into_iter().map(Box::new).collect(),
           return_value: Box::new(ret),
           level: Level::Value,
         }),
       just(Token::SerialSeparator)
-        .ignore_then(Self::type_group_start())
-        .ignore_then(parse_inner(expressions))
-        .then_ignore(Self::type_group_end())
+        .ignore_then(Self::within_type_group(parse_inner(expressions).boxed()))
         .map(|(statements, ret)| SerialGroup {
           ordered_statements: statements.into_iter().map(Box::new).collect(),
           return_value: Box::new(ret),
@@ -852,20 +863,14 @@ impl<'a> BasicGroup<'a> {
     }
 
     choice((
-      Self::value_group_start()
-        .ignore_then(parse_inner(expressions.clone()))
-        .then_ignore(Self::value_group_end())
-        .map(|expr| BasicGroup {
-          inner: Box::new(expr),
-          level: Level::Value,
-        }),
-      Self::type_group_start()
-        .ignore_then(parse_inner(expressions))
-        .then_ignore(Self::type_group_end())
-        .map(|expr| BasicGroup {
-          inner: Box::new(expr),
-          level: Level::r#Type,
-        }),
+      Self::within_value_group(parse_inner(expressions.clone()).boxed()).map(|expr| BasicGroup {
+        inner: Box::new(expr),
+        level: Level::Value,
+      }),
+      Self::within_type_group(parse_inner(expressions).boxed()).map(|expr| BasicGroup {
+        inner: Box::new(expr),
+        level: Level::r#Type,
+      }),
     ))
   }
 }
@@ -883,24 +888,41 @@ impl<'a> RecursivelyParseable<'a> for BasicGroup<'a> {
 }
 
 
+pub trait HasInsideTypeSpec<'a> {
+  fn within_type_spec<I, T>(
+    inner: Boxed<'a, 'a, I, T, extra::Default>,
+  ) -> Boxed<'a, 'a, I, T, extra::Default>
+  where
+    I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>,
+    T: 'a,
+  {
+    inner
+      .delimited_by(
+        just(Token::TypeSpecStart).then(just(Token::Whitespace).or_not()),
+        just(Token::Whitespace)
+          .or_not()
+          .then(just(Token::TypeSpecClose)),
+      )
+      .boxed()
+  }
+}
+
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TypeSpec<'a> {
   pub inner: Box<Expression<'a>>,
 }
+
+impl<'a> HasInsideTypeSpec<'a> for TypeSpec<'a> {}
 
 impl<'a> TypeSpec<'a> {
   fn type_specs<I>(
     expressions: Boxed<'a, 'a, I, Expression<'a>, extra::Default>,
   ) -> impl Parser<'a, I, TypeSpec<'a>>+Clone
   where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
-    just(Token::TypeSpecStart)
-      .ignore_then(just(Token::Whitespace).or_not())
-      .ignore_then(expressions)
-      .then_ignore(just(Token::Whitespace).or_not())
-      .then_ignore(just(Token::TypeSpecClose))
-      .map(|expr| TypeSpec {
-        inner: Box::new(expr),
-      })
+    Self::within_type_spec(expressions).map(|expr| TypeSpec {
+      inner: Box::new(expr),
+    })
   }
 }
 
@@ -1344,6 +1366,8 @@ pub struct NamespaceEdit<'a> {
   pub content: ModuleContent<'a>,
 }
 
+impl<'a> HasInsideNamespace<'a> for NamespaceEdit<'a> {}
+
 impl<'a> NamespaceEdit<'a> {
   fn namespace_edits<I>(
     inner: Boxed<'a, 'a, I, TopLevelStatement<'a>, extra::Default>,
@@ -1352,9 +1376,7 @@ impl<'a> NamespaceEdit<'a> {
     just(Token::ImportEdit)
       .ignore_then(NamespacePath::parser())
       .then_ignore(just(Token::Whitespace).or_not())
-      .then_ignore(just(Token::NamespaceStart))
-      .then(ModuleContent::parser(inner))
-      .then_ignore(just(Token::NamespaceClose))
+      .then(Self::within_namespace(ModuleContent::parser(inner)))
       .map(|(path, content)| NamespaceEdit { path, content })
   }
 }
@@ -1496,11 +1518,33 @@ impl<'a> TokenParseable<'a> for TerminalImportComponent<'a> {
 }
 
 
+pub trait HasInsideNamespace<'a> {
+  fn within_namespace<I, T>(
+    inner: Boxed<'a, 'a, I, T, extra::Default>,
+  ) -> Boxed<'a, 'a, I, T, extra::Default>
+  where
+    I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>,
+    T: 'a,
+  {
+    inner
+      .delimited_by(
+        just(Token::NamespaceStart).then(just(Token::Whitespace).or_not()),
+        just(Token::Whitespace)
+          .or_not()
+          .then(just(Token::NamespaceClose)),
+      )
+      .boxed()
+  }
+}
+
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ImportTailComponent<'a> {
   Value(TerminalImportComponent<'a>),
   Namespace(IntermediateImportComponent<'a>, Option<Box<ImportTail<'a>>>),
 }
+
+impl<'a> HasInsideNamespace<'a> for ImportTailComponent<'a> {}
 
 impl<'a> ImportTailComponent<'a> {
   fn import_tail_components<I>(
@@ -1510,15 +1554,7 @@ impl<'a> ImportTailComponent<'a> {
     choice((
       TerminalImportComponent::parser().map(ImportTailComponent::Value),
       IntermediateImportComponent::parser()
-        .then(
-          just(Token::NamespaceStart)
-            .ignore_then(just(Token::Whitespace).or_not())
-            /* FIXME: use .delimited_by() combinator! */
-            .ignore_then(inner)
-            .then_ignore(just(Token::Whitespace).or_not())
-            .then_ignore(just(Token::NamespaceClose))
-            .or_not(),
-        )
+        .then(Self::within_namespace(inner).or_not())
         .map(|(component, tail)| ImportTailComponent::Namespace(component, tail.map(Box::new))),
     ))
   }
@@ -1573,6 +1609,8 @@ pub struct ImportHighlight<'a> {
   pub tail: Option<ImportTail<'a>>,
 }
 
+impl<'a> HasInsideNamespace<'a> for ImportHighlight<'a> {}
+
 impl<'a> ImportHighlight<'a> {
   fn import_highlights<I>() -> impl Parser<'a, I, ImportHighlight<'a>>+Clone
   where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
@@ -1582,14 +1620,7 @@ impl<'a> ImportHighlight<'a> {
           .repeated()
           .collect::<Vec<_>>(),
       )
-      .then(
-        just(Token::NamespaceStart)
-          .ignore_then(just(Token::Whitespace).or_not())
-          .ignore_then(ImportTail::parser())
-          .then_ignore(just(Token::Whitespace).or_not())
-          .then_ignore(just(Token::NamespaceClose))
-          .or_not(),
-      )
+      .then(Self::within_namespace(ImportTail::parser()).or_not())
       .map(|(prefix, tail)| ImportHighlight { prefix, tail })
   }
 }
