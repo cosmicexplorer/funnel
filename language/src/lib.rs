@@ -136,7 +136,6 @@ fn case_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-z]+") }
 
 
 fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
-  /* global_symbol().map(Token::GlobalDereference) */
   choice((
     just('$')
       .ignore_then(global_symbol())
@@ -206,7 +205,7 @@ fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
     just("$$")
       .ignore_then(global_symbol())
       .map(Token::ImportHighlight),
-    whitespace().to(Token::Whitespace),
+    whitespace().at_least(1).to(Token::Whitespace),
   ))
 }
 
@@ -253,20 +252,21 @@ pub struct GlobalName<'a> {
   pub prefix: Vec<NamespaceComponent<'a>>,
 }
 
-fn global_names<'a, I>() -> impl Parser<'a, I, GlobalName<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let global_name = select_ref! {
-    Token::GlobalDereference(name) => name,
-  };
-  namespace_components()
-    .repeated()
-    .collect::<Vec<_>>()
-    .then(global_name)
-    .map(|(namespace_components, global_name)| GlobalName {
-      name: global_name,
-      prefix: namespace_components,
-    })
-}
+/* fn global_names<'a, I>() -> impl Parser<'a, I, GlobalName<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let global_name = select_ref! { */
+/* Token::GlobalDereference(name) => name, */
+/* }; */
+/* namespace_components() */
+/* .repeated() */
+/* .collect::<Vec<_>>() */
+/* .then(global_name) */
+/* .map(|(namespace_components, global_name)| GlobalName { */
+/* name: global_name, */
+/* prefix: namespace_components, */
+/* }) */
+/* } */
 
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -282,9 +282,9 @@ pub struct LocalName<'a> {
   pub eval_direction: EvalDirection,
 }
 
-fn local_names<'a, I>() -> impl Parser<'a, I, LocalName<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  select_ref! {
+pub fn local_names<'a, I>() -> impl Parser<'a, I, LocalName<'a>>
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+  select! {
     Token::LocalDereference(name) => LocalName { name, eval_direction: EvalDirection::Dereference },
     Token::LocalLambdaArg(name) => LocalName {
       name,
@@ -301,14 +301,15 @@ pub enum Name<'a> {
   Case(CaseNameDereference<'a>),
 }
 
-fn names<'a, I>() -> impl Parser<'a, I, Name<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  choice((
-    global_names().map(Name::Global),
-    local_names().map(Name::Local),
-    case_name_dereferences().map(Name::Case),
-  ))
-}
+/* fn names<'a, I>() -> impl Parser<'a, I, Name<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* choice(( */
+/* global_names().map(Name::Global), */
+/* local_names().map(Name::Local), */
+/* case_name_dereferences().map(Name::Case), */
+/* )) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -316,24 +317,25 @@ pub struct ParallelJoin<'a> {
   pub exprs: Vec<Box<Expression<'a>>>,
 }
 
-fn parallel_joins<'a, I>() -> impl Parser<'a, I, ParallelJoin<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let joined = just(Token::Whitespace)
-    .or_not()
-    .ignore_then(just(Token::ParallelSeparator))
-    .ignore_then(just(Token::Whitespace).or_not())
-    .ignore_then(expressions())
-    .repeated()
-    .at_least(1)
-    .collect::<Vec<_>>();
-  expressions().then(joined).map(|(expr, joined)| {
-    let mut ret: Vec<Expression<'a>> = vec![expr];
-    ret.extend(joined.into_iter());
-    ParallelJoin {
-      exprs: ret.into_iter().map(Box::new).collect(),
-    }
-  })
-}
+/* fn parallel_joins<'a, I>() -> impl Parser<'a, I, ParallelJoin<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let joined = just(Token::Whitespace) */
+/* .or_not() */
+/* .ignore_then(just(Token::ParallelSeparator)) */
+/* .ignore_then(just(Token::Whitespace).or_not()) */
+/* .ignore_then(expressions()) */
+/* .repeated() */
+/* .at_least(1) */
+/* .collect::<Vec<_>>(); */
+/* expressions().then(joined).map(|(expr, joined)| { */
+/* let mut ret: Vec<Expression<'a>> = vec![expr]; */
+/* ret.extend(joined.into_iter()); */
+/* ParallelJoin { */
+/* exprs: ret.into_iter().map(Box::new).collect(), */
+/* } */
+/* }) */
+/* } */
 
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -341,12 +343,14 @@ pub struct CaseNameDereference<'a> {
   pub name: &'a str,
 }
 
-fn case_name_dereferences<'a, I>() -> impl Parser<'a, I, CaseNameDereference<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  select_ref! {
-    Token::CaseLiteralDereference(name) => CaseNameDereference { name }
-  }
-}
+/* fn case_name_dereferences<'a, I>() -> impl Parser<'a, I,
+ * CaseNameDereference<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* select_ref! { */
+/* Token::CaseLiteralDereference(name) => CaseNameDereference { name } */
+/* } */
+/* } */
 
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -354,12 +358,14 @@ pub struct CaseValueAssertion<'a> {
   pub name: Option<&'a str>,
 }
 
-fn case_value_assertions<'a, I>() -> impl Parser<'a, I, CaseValueAssertion<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  select_ref! {
-    Token::CaseValueAssertion(name) => CaseValueAssertion { name: *name }
-  }
-}
+/* fn case_value_assertions<'a, I>() -> impl Parser<'a, I,
+ * CaseValueAssertion<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* select_ref! { */
+/* Token::CaseValueAssertion(name) => CaseValueAssertion { name: *name } */
+/* } */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -369,22 +375,23 @@ pub struct Assertion<'a> {
   pub level: Level,
 }
 
-fn assertions<'a, I>() -> impl Parser<'a, I, Assertion<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let assertions = select_ref! {
-    Token::Assertion(level) => level,
-  };
-  expressions()
-    .then_ignore(just(Token::Whitespace).or_not())
-    .then(assertions)
-    .then_ignore(just(Token::Whitespace).or_not())
-    .then(expressions())
-    .map(|((lhs, level), rhs)| Assertion {
-      lhs: Box::new(lhs),
-      rhs: Box::new(rhs),
-      level: *level,
-    })
-}
+/* fn assertions<'a, I>() -> impl Parser<'a, I, Assertion<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let assertions = select_ref! { */
+/* Token::Assertion(level) => level, */
+/* }; */
+/* expressions() */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .then(assertions) */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .then(expressions()) */
+/* .map(|((lhs, level), rhs)| Assertion { */
+/* lhs: Box::new(lhs), */
+/* rhs: Box::new(rhs), */
+/* level: *level, */
+/* }) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -395,31 +402,32 @@ pub struct ArrowApplication<'a> {
   pub level: Level,
 }
 
-fn arrow_applications<'a, I>() -> impl Parser<'a, I, ArrowApplication<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let applications = select_ref! {
-    Token::Application(direction, level) => (direction, level),
-  };
-  expressions()
-    .then_ignore(just(Token::Whitespace).or_not())
-    .then(applications)
-    .then_ignore(just(Token::Whitespace).or_not())
-    .then(expressions())
-    .map(|((lhs, (direction, level)), rhs)| match direction {
-      Direction::Left => ArrowApplication {
-        source: Box::new(rhs),
-        target: Box::new(lhs),
-        direction: *direction,
-        level: *level,
-      },
-      Direction::Right => ArrowApplication {
-        source: Box::new(lhs),
-        target: Box::new(rhs),
-        direction: *direction,
-        level: *level,
-      },
-    })
-}
+/* fn arrow_applications<'a, I>() -> impl Parser<'a, I, ArrowApplication<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let applications = select_ref! { */
+/* Token::Application(direction, level) => (direction, level), */
+/* }; */
+/* expressions() */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .then(applications) */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .then(expressions()) */
+/* .map(|((lhs, (direction, level)), rhs)| match direction { */
+/* Direction::Left => ArrowApplication { */
+/* source: Box::new(rhs), */
+/* target: Box::new(lhs), */
+/* direction: *direction, */
+/* level: *level, */
+/* }, */
+/* Direction::Right => ArrowApplication { */
+/* source: Box::new(lhs), */
+/* target: Box::new(rhs), */
+/* direction: *direction, */
+/* level: *level, */
+/* }, */
+/* }) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -429,32 +437,33 @@ pub struct CaseDeclaration<'a> {
   pub application: Option<(Level, Box<Expression<'a>>)>,
 }
 
-fn case_declarations<'a, I>() -> impl Parser<'a, I, CaseDeclaration<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let case_decls = select_ref! {
-    Token::CaseDeclaration(name) => name,
-  };
-  /* NB: only select rightward arrows. */
-  let arrows = select_ref! {
-    Token::Application(Direction::Right, level) => level,
-  };
+/* fn case_declarations<'a, I>() -> impl Parser<'a, I, CaseDeclaration<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let case_decls = select_ref! { */
+/* Token::CaseDeclaration(name) => name, */
+/* }; */
+/* /\* NB: only select rightward arrows. *\/ */
+/* let arrows = select_ref! { */
+/* Token::Application(Direction::Right, level) => level, */
+/* }; */
 
-  let application = arrows
-    .then_ignore(just(Token::Whitespace).or_not())
-    .then(expressions())
-    .then_ignore(just(Token::Whitespace).or_not())
-    .map(|(arrow_level, expr)| (*arrow_level, Box::new(expr)))
-    .or_not();
+/* let application = arrows */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .then(expressions()) */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .map(|(arrow_level, expr)| (*arrow_level, Box::new(expr))) */
+/* .or_not(); */
 
-  case_decls
-    .then(leftward_immediate_sources().repeated().collect::<Vec<_>>())
-    .then(application)
-    .map(|((name, immediates), application)| CaseDeclaration {
-      name: *name,
-      immediates,
-      application,
-    })
-}
+/* case_decls */
+/* .then(leftward_immediate_sources().repeated().collect::<Vec<_>>()) */
+/* .then(application) */
+/* .map(|((name, immediates), application)| CaseDeclaration { */
+/* name: *name, */
+/* immediates, */
+/* application, */
+/* }) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -463,51 +472,55 @@ pub struct CaseDeconstruction<'a> {
   pub level: Level,
 }
 
-fn case_deconstructions<'a, I>() -> impl Parser<'a, I, CaseDeconstruction<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let value_group_start = select_ref! {
-    Token::GroupStart(Level::Value) => (),
-  };
-  let type_group_start = select_ref! {
-    Token::GroupStart(Level::r#Type) => (),
-  };
-  let value_group_end = select_ref! {
-    Token::GroupClose(Level::Value) => (),
-  };
-  let type_group_end = select_ref! {
-    Token::GroupClose(Level::r#Type) => (),
-  };
+/* fn case_deconstructions<'a, I>() -> impl Parser<'a, I,
+ * CaseDeconstruction<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let value_group_start = select_ref! { */
+/* Token::GroupStart(Level::Value) => (), */
+/* }; */
+/* let type_group_start = select_ref! { */
+/* Token::GroupStart(Level::r#Type) => (), */
+/* }; */
+/* let value_group_end = select_ref! { */
+/* Token::GroupClose(Level::Value) => (), */
+/* }; */
+/* let type_group_end = select_ref! { */
+/* Token::GroupClose(Level::r#Type) => (), */
+/* }; */
 
-  fn parse_decls<'a, I>() -> impl Parser<'a, I, CaseDeclaration<'a>>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-    case_declarations().then_ignore(just(Token::Whitespace).or_not())
-  }
-  fn parse_inner<'a, I>() -> impl Parser<'a, I, Vec<CaseDeclaration<'a>>>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-    just(Token::Whitespace)
-      .or_not()
-      .ignore_then(parse_decls().repeated().at_least(1).collect::<Vec<_>>())
-  }
+/* fn parse_decls<'a, I>() -> impl Parser<'a, I, CaseDeclaration<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* case_declarations().then_ignore(just(Token::Whitespace).or_not()) */
+/* } */
+/* fn parse_inner<'a, I>() -> impl Parser<'a, I, Vec<CaseDeclaration<'a>>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* just(Token::Whitespace) */
+/* .or_not() */
+/* .ignore_then(parse_decls().repeated().at_least(1).collect::<Vec<_>>()) */
+/* } */
 
-  choice((
-    just(Token::FreeCaseMarker)
-      .ignore_then(value_group_start)
-      .ignore_then(parse_inner())
-      .then_ignore(value_group_end)
-      .map(|cases| CaseDeconstruction {
-        cases,
-        level: Level::Value,
-      }),
-    just(Token::FreeCaseMarker)
-      .ignore_then(type_group_start)
-      .ignore_then(parse_inner())
-      .then_ignore(type_group_end)
-      .map(|cases| CaseDeconstruction {
-        cases,
-        level: Level::r#Type,
-      }),
-  ))
-}
+/* choice(( */
+/* just(Token::FreeCaseMarker) */
+/* .ignore_then(value_group_start) */
+/* .ignore_then(parse_inner()) */
+/* .then_ignore(value_group_end) */
+/* .map(|cases| CaseDeconstruction { */
+/* cases, */
+/* level: Level::Value, */
+/* }), */
+/* just(Token::FreeCaseMarker) */
+/* .ignore_then(type_group_start) */
+/* .ignore_then(parse_inner()) */
+/* .then_ignore(type_group_end) */
+/* .map(|cases| CaseDeconstruction { */
+/* cases, */
+/* level: Level::r#Type, */
+/* }), */
+/* )) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -517,71 +530,76 @@ pub struct SerialGroup<'a> {
   pub level: Level,
 }
 
-fn serial_groups<'a, I>() -> impl Parser<'a, I, SerialGroup<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let value_group_start = select_ref! {
-    Token::GroupStart(Level::Value) => (),
-  };
-  let type_group_start = select_ref! {
-    Token::GroupStart(Level::r#Type) => (),
-  };
-  let value_group_end = select_ref! {
-    Token::GroupClose(Level::Value) => (),
-  };
-  let type_group_end = select_ref! {
-    Token::GroupClose(Level::r#Type) => (),
-  };
+/* fn serial_groups<'a, I>() -> impl Parser<'a, I, SerialGroup<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let value_group_start = select_ref! { */
+/* Token::GroupStart(Level::Value) => (), */
+/* }; */
+/* let type_group_start = select_ref! { */
+/* Token::GroupStart(Level::r#Type) => (), */
+/* }; */
+/* let value_group_end = select_ref! { */
+/* Token::GroupClose(Level::Value) => (), */
+/* }; */
+/* let type_group_end = select_ref! { */
+/* Token::GroupClose(Level::r#Type) => (), */
+/* }; */
 
-  /* (; <expr>)+ */
-  fn parse_statements<'a, I>() -> impl Parser<'a, I, Vec<Expression<'a>>>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-    just(Token::SerialSeparator)
-      .ignore_then(just(Token::Whitespace).or_not())
-      .ignore_then(expressions())
-      .then_ignore(just(Token::Whitespace).or_not())
-      .repeated()
-      .at_least(1)
-      .collect::<Vec<_>>()
-  }
-  /* : <expr> */
-  fn parse_return<'a, I>() -> impl Parser<'a, I, Expression<'a>>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-    just(Token::FreeSerialReturn)
-      .ignore_then(just(Token::Whitespace).or_not())
-      .ignore_then(expressions())
-  }
+/* /\* (; <expr>)+ *\/ */
+/* fn parse_statements<'a, I>() -> impl Parser<'a, I, Vec<Expression<'a>>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* just(Token::SerialSeparator) */
+/* .ignore_then(just(Token::Whitespace).or_not()) */
+/* .ignore_then(expressions()) */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .repeated() */
+/* .at_least(1) */
+/* .collect::<Vec<_>>() */
+/* } */
+/* /\* : <expr> *\/ */
+/* fn parse_return<'a, I>() -> impl Parser<'a, I, Expression<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* just(Token::FreeSerialReturn) */
+/* .ignore_then(just(Token::Whitespace).or_not()) */
+/* .ignore_then(expressions()) */
+/* } */
 
-  /* ( (; <expr>)+ : <expr> ) */
-  fn parse_inner<'a, I>() -> impl Parser<'a, I, (Vec<Expression<'a>>, Expression<'a>)>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-    just(Token::Whitespace)
-      .or_not()
-      .ignore_then(parse_statements())
-      .then(parse_return())
-      .then_ignore(just(Token::Whitespace).or_not())
-  }
+/* /\* ( (; <expr>)+ : <expr> ) *\/ */
+/* fn parse_inner<'a, I>() -> impl Parser<'a, I, (Vec<Expression<'a>>,
+ * Expression<'a>)> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* just(Token::Whitespace) */
+/* .or_not() */
+/* .ignore_then(parse_statements()) */
+/* .then(parse_return()) */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* } */
 
-  choice((
-    just(Token::SerialSeparator)
-      .ignore_then(value_group_start)
-      .ignore_then(parse_inner())
-      .then_ignore(value_group_end)
-      .map(|(statements, ret)| SerialGroup {
-        ordered_statements: statements.into_iter().map(Box::new).collect(),
-        return_value: Box::new(ret),
-        level: Level::Value,
-      }),
-    just(Token::SerialSeparator)
-      .ignore_then(type_group_start)
-      .ignore_then(parse_inner())
-      .then_ignore(type_group_end)
-      .map(|(statements, ret)| SerialGroup {
-        ordered_statements: statements.into_iter().map(Box::new).collect(),
-        return_value: Box::new(ret),
-        level: Level::r#Type,
-      }),
-  ))
-}
+/* choice(( */
+/* just(Token::SerialSeparator) */
+/* .ignore_then(value_group_start) */
+/* .ignore_then(parse_inner()) */
+/* .then_ignore(value_group_end) */
+/* .map(|(statements, ret)| SerialGroup { */
+/* ordered_statements: statements.into_iter().map(Box::new).collect(), */
+/* return_value: Box::new(ret), */
+/* level: Level::Value, */
+/* }), */
+/* just(Token::SerialSeparator) */
+/* .ignore_then(type_group_start) */
+/* .ignore_then(parse_inner()) */
+/* .then_ignore(type_group_end) */
+/* .map(|(statements, ret)| SerialGroup { */
+/* ordered_statements: statements.into_iter().map(Box::new).collect(), */
+/* return_value: Box::new(ret), */
+/* level: Level::r#Type, */
+/* }), */
+/* )) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -590,46 +608,48 @@ pub struct BasicGroup<'a> {
   pub level: Level,
 }
 
-fn basic_groups<'a, I>() -> impl Parser<'a, I, BasicGroup<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  let value_group_start = select_ref! {
-    Token::GroupStart(Level::Value) => (),
-  };
-  let type_group_start = select_ref! {
-    Token::GroupStart(Level::r#Type) => (),
-  };
-  let value_group_end = select_ref! {
-    Token::GroupClose(Level::Value) => (),
-  };
-  let type_group_end = select_ref! {
-    Token::GroupClose(Level::r#Type) => (),
-  };
+/* fn basic_groups<'a, I>() -> impl Parser<'a, I, BasicGroup<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* let value_group_start = select_ref! { */
+/* Token::GroupStart(Level::Value) => (), */
+/* }; */
+/* let type_group_start = select_ref! { */
+/* Token::GroupStart(Level::r#Type) => (), */
+/* }; */
+/* let value_group_end = select_ref! { */
+/* Token::GroupClose(Level::Value) => (), */
+/* }; */
+/* let type_group_end = select_ref! { */
+/* Token::GroupClose(Level::r#Type) => (), */
+/* }; */
 
-  fn parse_inner<'a, I>() -> impl Parser<'a, I, Expression<'a>>
-  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-    just(Token::Whitespace)
-      .or_not()
-      .ignore_then(expressions())
-      .then_ignore(just(Token::Whitespace).or_not())
-  }
+/* fn parse_inner<'a, I>() -> impl Parser<'a, I, Expression<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* just(Token::Whitespace) */
+/* .or_not() */
+/* .ignore_then(expressions()) */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* } */
 
-  choice((
-    value_group_start
-      .ignore_then(parse_inner())
-      .then_ignore(value_group_end)
-      .map(|expr| BasicGroup {
-        inner: Box::new(expr),
-        level: Level::Value,
-      }),
-    type_group_start
-      .ignore_then(parse_inner())
-      .then_ignore(type_group_end)
-      .map(|expr| BasicGroup {
-        inner: Box::new(expr),
-        level: Level::r#Type,
-      }),
-  ))
-}
+/* choice(( */
+/* value_group_start */
+/* .ignore_then(parse_inner()) */
+/* .then_ignore(value_group_end) */
+/* .map(|expr| BasicGroup { */
+/* inner: Box::new(expr), */
+/* level: Level::Value, */
+/* }), */
+/* type_group_start */
+/* .ignore_then(parse_inner()) */
+/* .then_ignore(type_group_end) */
+/* .map(|expr| BasicGroup { */
+/* inner: Box::new(expr), */
+/* level: Level::r#Type, */
+/* }), */
+/* )) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -637,17 +657,18 @@ pub struct TypeSpec<'a> {
   pub inner: Box<Expression<'a>>,
 }
 
-fn type_specs<'a, I>() -> impl Parser<'a, I, TypeSpec<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  just(Token::TypeSpecStart)
-    .ignore_then(just(Token::Whitespace).or_not())
-    .ignore_then(expressions())
-    .then_ignore(just(Token::Whitespace).or_not())
-    .then_ignore(just(Token::TypeSpecClose))
-    .map(|expr| TypeSpec {
-      inner: Box::new(expr),
-    })
-}
+/* fn type_specs<'a, I>() -> impl Parser<'a, I, TypeSpec<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* just(Token::TypeSpecStart) */
+/* .ignore_then(just(Token::Whitespace).or_not()) */
+/* .ignore_then(expressions()) */
+/* .then_ignore(just(Token::Whitespace).or_not()) */
+/* .then_ignore(just(Token::TypeSpecClose)) */
+/* .map(|expr| TypeSpec { */
+/* inner: Box::new(expr), */
+/* }) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -658,14 +679,15 @@ pub enum Group<'a> {
   Case(CaseDeconstruction<'a>),
 }
 
-fn groups<'a, I>() -> impl Parser<'a, I, Group<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  choice((
-    serial_groups().map(Group::Serial),
-    case_deconstructions().map(Group::Case),
-    basic_groups().map(Group::Basic),
-  ))
-}
+/* fn groups<'a, I>() -> impl Parser<'a, I, Group<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* choice(( */
+/* serial_groups().map(Group::Serial), */
+/* case_deconstructions().map(Group::Case), */
+/* basic_groups().map(Group::Basic), */
+/* )) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -674,12 +696,14 @@ pub struct LocalNameDereference<'a> {
 }
 
 
-fn local_name_dereferences<'a, I>() -> impl Parser<'a, I, LocalNameDereference<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  select_ref! {
-    Token::LocalDereference(name) => LocalNameDereference { name }
-  }
-}
+/* fn local_name_dereferences<'a, I>() -> impl Parser<'a, I,
+ * LocalNameDereference<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* select_ref! { */
+/* Token::LocalDereference(name) => LocalNameDereference { name } */
+/* } */
+/* } */
 
 
 /// things that apply to their left
@@ -697,15 +721,18 @@ pub enum LeftwardImmediateSource<'a> {
   Group(Group<'a>),
 }
 
-fn leftward_immediate_sources<'a, I>() -> impl Parser<'a, I, LeftwardImmediateSource<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  choice((
-    local_name_dereferences().map(LeftwardImmediateSource::LocalNameDereference),
-    case_value_assertions().map(LeftwardImmediateSource::CaseValueAssertion),
-    global_names().map(LeftwardImmediateSource::GlobalName),
-    groups().map(LeftwardImmediateSource::Group),
-  ))
-}
+/* fn leftward_immediate_sources<'a, I>() -> impl Parser<'a, I,
+ * LeftwardImmediateSource<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* choice(( */
+/* local_name_dereferences().
+ * map(LeftwardImmediateSource::LocalNameDereference), */
+/* case_value_assertions().map(LeftwardImmediateSource::CaseValueAssertion), */
+/* global_names().map(LeftwardImmediateSource::GlobalName), */
+/* groups().map(LeftwardImmediateSource::Group), */
+/* )) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -714,15 +741,17 @@ pub struct ImmediateApplication<'a> {
   pub source: LeftwardImmediateSource<'a>,
 }
 
-fn immediate_applications<'a, I>() -> impl Parser<'a, I, ImmediateApplication<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  expressions()
-    .then(leftward_immediate_sources())
-    .map(|(target, source)| ImmediateApplication {
-      target: Box::new(target),
-      source,
-    })
-}
+/* fn immediate_applications<'a, I>() -> impl Parser<'a, I,
+ * ImmediateApplication<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* expressions() */
+/* .then(leftward_immediate_sources()) */
+/* .map(|(target, source)| ImmediateApplication { */
+/* target: Box::new(target), */
+/* source, */
+/* }) */
+/* } */
 
 
 #[derive(Debug, Clone)]
@@ -735,16 +764,17 @@ pub enum Expression<'a> {
   Group(Group<'a>),
 }
 
-fn expressions<'a, I>() -> impl Parser<'a, I, Expression<'a>>
-where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a> {
-  choice((
-    names().map(Expression::Name),
-    immediate_applications().map(Expression::Immediate),
-    parallel_joins().map(Expression::Join),
-    groups().map(Expression::Group),
-    arrow_applications().map(Expression::Arrow),
-  ))
-}
+/* fn expressions<'a, I>() -> impl Parser<'a, I, Expression<'a>> */
+/* where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan>+BorrowInput<'a>
+ * { */
+/* choice(( */
+/* names().map(Expression::Name), */
+/* immediate_applications().map(Expression::Immediate), */
+/* parallel_joins().map(Expression::Join), */
+/* groups().map(Expression::Group), */
+/* arrow_applications().map(Expression::Arrow), */
+/* )) */
+/* } */
 
 
 /* pub enum GlobalPlaceExpression<'a> {} */
@@ -788,5 +818,42 @@ mod tests {
     let (result, errs) = parser().parse("c").into_output_errors();
     assert!(result.is_none());
     assert!(!errs.is_empty());
+  }
+
+  #[test]
+  fn tokenize_example() {
+    let result = tokenize()
+      .repeated()
+      .collect_exactly::<[_; 2]>()
+      .parse(".x.y")
+      .into_result()
+      .unwrap();
+    assert_eq!(result, [
+      Token::LocalDereference("x"),
+      Token::LocalDereference("y")
+    ]);
+    let result = tokenize()
+      .repeated()
+      .collect::<Vec<_>>()
+      .parse(".x.y(3)")
+      .into_result()
+      .unwrap();
+    assert_eq!(result, vec![
+      Token::LocalDereference("x"),
+      Token::LocalDereference("y"),
+      Token::GroupStart(Level::Value),
+      Token::NumericLiteral("3"),
+      Token::GroupClose(Level::Value),
+    ]);
+  }
+
+  #[test]
+  fn parse_local_names() {
+    let token_stream = tokenize().repeated().stream(".x").into_result().unwrap();
+    let result = local_names().parse(token_stream).into_result().unwrap();
+    assert_eq!(result, LocalName {
+      name: "x",
+      eval_direction: EvalDirection::Dereference
+    });
   }
 }

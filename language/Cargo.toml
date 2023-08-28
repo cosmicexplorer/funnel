@@ -12,6 +12,8 @@ repository.workspace    = true
 
 [dependencies]
 ariadne                 = "0.3"
-chumsky                 = { version = "1.0.0-alpha.4", features = ["regex"] }
+# chumsky                 = { version = "1.0.0-alpha.4", features = ["regex"] }
+chumsky                 = { git = "https://github.com/cosmicexplorer/chumsky", rev = "e7ad6208491f48696fe48e4d36c13b77bc6403ed", features = ["regex"] }
+# chumsky                 = { path = "/home/cosmicexplorer/tools/chumsky", features = ["regex"] }
 displaydoc.workspace    = true
 thiserror.workspace     = true
