@@ -98,16 +98,16 @@ $f[\.T](\.x[.T]) =<= \.convert~[(\.x[.T] / .y[$Integer])] => (.convert(.x)$plus(
 $f[\.T](\.x[.T] ~> .y[$Integer]) =<= (.y$plus(3))[$Integer]
 
 # modules and namespaces:
-:submodule {
-  :inner {
+>:submodule {
+  >:inner {
     $x =<= 3
   }
   # submodules can be reopened after first declared:
-  :inner {
+  >:inner {
     $y =<= 4
   }
 }
-:submodule:inner {
+>:submodule:inner {
   $z =<= 5
 }
 # access nested modules via ":"
@@ -116,17 +116,28 @@ $f[\.T](\.x[.T] ~> .y[$Integer]) =<= (.y$plus(3))[$Integer]
 # resolve from the global scope with "::"
 ::submodule:inner$y =!= 4
 # the contents of this submodule will be read from the neighboring file "submodule.fun"
-:submodule{+file}
+>:submodule{+file}
 # read from an explicit file path
-:submodule{+file("some-file.fun")}
+>:submodule{+file("some-file.fun")}
 # the contents of this submodule will be read from the neighboring directory "submodule", with
 # central file name "mod.fun" (like mod.rs)
-:submodule{+dir}
+>:submodule{+dir}
 
 # import "$package:function" as "$function"
-$:package:$function
+<:package{<$function}
+# import ":package:module" as ":module"
+<:package{<:module}
+# import ":package:module" as ":mymod"
+<:package{:module > :mymod}
+# import ":module" as ":mod"
+<{:module > :mod}
 # import "$package:function" as "$wow"
-$:package:function$wow
+<:package{$function > $wow}
+# import ":package:module" as ":module", ":package$function" as "$function",
+# ":package:inner-mod$f" as "$h", ":package:inner-mod:mod" as ":mod",
+# ":package:inner-mod:mod" as ":other-mod", and
+# ":package:inner-mod:mod$g" as "$g"
+<:package{<:module, <$function, :inner-mod{$f > $h, <:mod>:other-mod{<$g}}}
 
 # $functions can be composed via mere juxtaposition:
 [($f$g$h)] -!- [($h($g($f(\.-))))]

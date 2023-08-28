@@ -120,7 +120,8 @@ pub enum Token<'a> {
   AbbreviatedImplicitLink,
   NamespaceStart,
   NamespaceClose,
-  ImportHighlight(&'a str),
+  ImportLift,
+  ImportEdit,
   Whitespace,
 }
 
@@ -128,6 +129,8 @@ impl<'a> Token<'a> {
   fn global_symbol() -> impl Parser<'a, &'a str, &'a str> { regex("[a-zA-Z][a-zA-Z0-9_-]*") }
 
   fn local_symbol() -> impl Parser<'a, &'a str, &'a str> { regex("[a-zA-Z_-][a-zA-Z0-9_-]*") }
+
+  fn namespace_symbol() -> impl Parser<'a, &'a str, &'a str> { regex("[a-z][a-z-]*") }
 
   fn case_symbol() -> impl Parser<'a, &'a str, &'a str> { regex("[a-z]+") }
 
@@ -143,7 +146,7 @@ impl<'a> Token<'a> {
         .ignore_then(Self::local_symbol())
         .map(Token::LocalLambdaArg),
       just(':')
-        .ignore_then(Self::global_symbol())
+        .ignore_then(Self::namespace_symbol())
         .map(Token::NamespaceDereference),
       choice((
         just("-<-").to(Token::GlobalAssignment(Direction::Left, Level::r#Type)),
@@ -199,9 +202,8 @@ impl<'a> Token<'a> {
         just("{").to(Token::NamespaceStart),
         just("}").to(Token::NamespaceClose),
       )),
-      just("$$")
-        .ignore_then(Self::global_symbol())
-        .map(Token::ImportHighlight),
+      just('<').to(Token::ImportLift),
+      just('>').to(Token::ImportEdit),
       whitespace().at_least(1).to(Token::Whitespace),
     ))
   }
@@ -353,35 +355,37 @@ impl<'a> TokenParseable<'a> for Name<'a> {
   }
 }
 
+pub trait HasArgSep<'a> {
+  fn arg_sep<I>() -> Boxed<'a, 'a, I, Token<'a>, extra::Default>
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    just(Token::Whitespace)
+      .or_not()
+      .ignore_then(just(Token::ParallelSeparator))
+      .then_ignore(just(Token::Whitespace).or_not())
+      .boxed()
+  }
+}
+
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ParallelJoin<'a> {
   pub exprs: Vec<Box<Expression<'a>>>,
 }
 
+impl<'a> HasArgSep<'a> for ParallelJoin<'a> {}
+
 impl<'a> ParallelJoin<'a> {
   fn parallel_joins<I>(
     expressions: impl Parser<'a, I, Expression<'a>>+Clone+'a,
   ) -> impl Parser<'a, I, ParallelJoin<'a>>+Clone
   where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
-    let joined = just(Token::Whitespace)
-      .or_not()
-      .ignore_then(just(Token::ParallelSeparator))
-      .ignore_then(just(Token::Whitespace).or_not())
-      .ignore_then(expressions.clone())
-      .repeated()
-      .at_least(1)
-      .collect::<Vec<_>>();
     expressions
-      .then(joined)
-      .map(|(expr, joined)| {
-        let mut ret: Vec<Expression<'a>> = vec![expr];
-        ret.extend(joined.into_iter());
-        ParallelJoin {
-          exprs: ret.into_iter().map(Box::new).collect(),
-        }
+      .separated_by(Self::arg_sep())
+      .allow_trailing()
+      .collect::<Vec<_>>()
+      .map(|exprs| ParallelJoin {
+        exprs: exprs.into_iter().map(Box::new).collect(),
       })
-      .boxed()
   }
 }
 
@@ -569,15 +573,15 @@ impl<'a> NamedCaseDeclaration<'a> {
       .or_not();
 
     case_decls
-    .then(BasicGroup::parser(expressions.boxed()).repeated().collect::<Vec<_>>())
-    .then(application)
-    .map(|((name, immediates), application)| NamedCaseDeclaration {
-      name,
-      immediates,
-      application,
-    })
-    /* compilation fails with a type too long error if this is omitted lol */
-    .boxed()
+      .then(BasicGroup::parser(expressions.boxed()).repeated().collect::<Vec<_>>())
+      .then(application)
+      .map(|((name, immediates), application)| NamedCaseDeclaration {
+        name,
+        immediates,
+        application,
+      })
+      /* compilation fails with a type too long error if this is omitted lol */
+      .boxed()
   }
 }
 
@@ -1163,15 +1167,441 @@ impl<'a> TokenParseable<'a> for Expression<'a> {
 }
 
 
-/* pub enum GlobalPlaceExpression<'a> {} */
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GlobalPlaceExpression<'a> {
+  pub place: GlobalName<'a>,
+  pub immediates: Vec<BasicGroup<'a>>,
+}
 
-/* #[derive(Debug, Clone)] */
-/* pub enum TopLevelStatement<'a> { */
-/* GlobalAssignment(Expression<'a>, Expression<'a>, Direction, Level), */
-/* SimpleExpression(Expression<'a>), */
-/* NamespaceExpansion, */
-/* ImportHighlight, */
-/* } */
+impl<'a> GlobalPlaceExpression<'a> {
+  fn global_place_expressions<I>() -> impl Parser<'a, I, GlobalPlaceExpression<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    GlobalName::parser()
+      .then(
+        BasicGroup::parser(Expression::parser())
+          .repeated()
+          .collect::<Vec<_>>(),
+      )
+      .map(|(place, immediates)| GlobalPlaceExpression { place, immediates })
+  }
+}
+
+impl<'a> TokenParseable<'a> for GlobalPlaceExpression<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::global_place_expressions::<I>().boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GlobalAssignment<'a> {
+  pub place: GlobalPlaceExpression<'a>,
+  pub value: Expression<'a>,
+  pub direction: Direction,
+  pub level: Level,
+}
+
+impl<'a> GlobalAssignment<'a> {
+  fn global_assignments<I>() -> impl Parser<'a, I, GlobalAssignment<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    let left_arrows = select! {
+      Token::GlobalAssignment(Direction::Left, level) => level,
+    };
+    let right_arrows = select! {
+      Token::GlobalAssignment(Direction::Right, level) => level,
+    };
+    choice((
+      GlobalPlaceExpression::parser()
+        .then(left_arrows)
+        .then(Expression::parser())
+        .map(|((place, level), value)| GlobalAssignment {
+          place,
+          value,
+          direction: Direction::Left,
+          level,
+        }),
+      Expression::parser()
+        .then(right_arrows)
+        .then(GlobalPlaceExpression::parser())
+        .map(|((value, level), place)| GlobalAssignment {
+          place,
+          value,
+          direction: Direction::Right,
+          level,
+        }),
+    ))
+  }
+}
+
+impl<'a> TokenParseable<'a> for GlobalAssignment<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::global_assignments::<I>().boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum TopLevelStatement<'a> {
+  GlobalAssignment(GlobalAssignment<'a>),
+  SimpleExpression(Expression<'a>),
+  NamespaceEdit(NamespaceEdit<'a>),
+  ImportHighlight(ImportHighlight<'a>),
+}
+
+impl<'a> TopLevelStatement<'a> {
+  fn top_level_statements<I>() -> impl Parser<'a, I, TopLevelStatement<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    recursive(|inner| {
+      choice((
+        GlobalAssignment::parser().map(TopLevelStatement::GlobalAssignment),
+        Expression::parser().map(TopLevelStatement::SimpleExpression),
+        NamespaceEdit::parser(inner.boxed()).map(TopLevelStatement::NamespaceEdit),
+        ImportHighlight::parser().map(TopLevelStatement::ImportHighlight),
+      ))
+    })
+  }
+}
+
+impl<'a> TokenParseable<'a> for TopLevelStatement<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::top_level_statements::<I>().boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct NamespacePath<'a> {
+  pub components: Vec<NamespaceComponent<'a>>,
+}
+
+impl<'a> NamespacePath<'a> {
+  fn namespace_paths<I>() -> impl Parser<'a, I, NamespacePath<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    NamespaceComponent::parser()
+      .repeated()
+      .at_least(1)
+      .collect::<Vec<_>>()
+      .map(|components| NamespacePath { components })
+  }
+}
+
+impl<'a> TokenParseable<'a> for NamespacePath<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::namespace_paths::<I>().boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ModuleContent<'a> {
+  pub statements: Vec<Box<TopLevelStatement<'a>>>,
+}
+
+impl<'a> ModuleContent<'a> {
+  fn module_contents<I>(
+    inner: Boxed<'a, 'a, I, TopLevelStatement<'a>, extra::Default>,
+  ) -> impl Parser<'a, I, ModuleContent<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    inner
+      .separated_by(just(Token::Whitespace).or_not())
+      .allow_leading()
+      .allow_trailing()
+      .collect::<Vec<_>>()
+      .map(|statements| ModuleContent {
+        statements: statements.into_iter().map(Box::new).collect(),
+      })
+  }
+}
+
+impl<'a> RecursivelyParseable<'a> for ModuleContent<'a> {
+  type InnerExpr = TopLevelStatement<'a>;
+  type Tok = Token<'a>;
+
+  fn parser<I>(
+    inner: Boxed<'a, 'a, I, Self::InnerExpr, extra::Default>,
+  ) -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::module_contents::<I>(inner).boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct NamespaceEdit<'a> {
+  pub path: NamespacePath<'a>,
+  pub content: ModuleContent<'a>,
+}
+
+impl<'a> NamespaceEdit<'a> {
+  fn namespace_edits<I>(
+    inner: Boxed<'a, 'a, I, TopLevelStatement<'a>, extra::Default>,
+  ) -> impl Parser<'a, I, NamespaceEdit<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    just(Token::ImportEdit)
+      .ignore_then(NamespacePath::parser())
+      .then_ignore(just(Token::Whitespace).or_not())
+      .then_ignore(just(Token::NamespaceStart))
+      .then(ModuleContent::parser(inner))
+      .then_ignore(just(Token::NamespaceClose))
+      .map(|(path, content)| NamespaceEdit { path, content })
+  }
+}
+
+impl<'a> RecursivelyParseable<'a> for NamespaceEdit<'a> {
+  type InnerExpr = TopLevelStatement<'a>;
+  type Tok = Token<'a>;
+
+  fn parser<I>(
+    inner: Boxed<'a, 'a, I, Self::InnerExpr, extra::Default>,
+  ) -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::namespace_edits::<I>(inner).boxed()
+  }
+}
+
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub enum LiftStatus {
+  NotLifted,
+  Lifted,
+}
+
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub enum NamespaceRewriteStatus<'a> {
+  Rewritten(NamespaceComponent<'a>),
+  NotRewritten,
+}
+
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct IntermediateImportComponent<'a> {
+  pub name: NamespaceComponent<'a>,
+  pub lifted: LiftStatus,
+  pub rewritten: NamespaceRewriteStatus<'a>,
+}
+
+impl<'a> IntermediateImportComponent<'a> {
+  fn intermediate_import_components<I>() -> impl Parser<'a, I, IntermediateImportComponent<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    just(Token::ImportLift)
+      .or_not()
+      .then(NamespaceComponent::parser())
+      .then(
+        just(Token::Whitespace)
+          .or_not()
+          .ignore_then(just(Token::ImportEdit))
+          .ignore_then(just(Token::Whitespace).or_not())
+          .ignore_then(NamespaceComponent::parser())
+          .or_not(),
+      )
+      .map(
+        |((lift_result, name), rewrite_result)| IntermediateImportComponent {
+          name,
+          lifted: if lift_result.is_some() {
+            LiftStatus::Lifted
+          } else {
+            LiftStatus::NotLifted
+          },
+          rewritten: match rewrite_result {
+            Some(x) => NamespaceRewriteStatus::Rewritten(x),
+            None => NamespaceRewriteStatus::NotRewritten,
+          },
+        },
+      )
+  }
+}
+
+impl<'a> TokenParseable<'a> for IntermediateImportComponent<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::intermediate_import_components::<I>().boxed()
+  }
+}
+
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ValueRewriteStatus<'a> {
+  Rewritten(&'a str),
+  NotRewritten,
+}
+
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct TerminalImportComponent<'a> {
+  pub name: &'a str,
+  pub lifted: LiftStatus,
+  pub rewritten: ValueRewriteStatus<'a>,
+}
+
+impl<'a> TerminalImportComponent<'a> {
+  fn global_symbol<I>() -> impl Parser<'a, I, &'a str>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    select! {
+      Token::GlobalDereference(name) => name,
+    }
+  }
+
+  fn terminal_import_components<I>() -> impl Parser<'a, I, TerminalImportComponent<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    just(Token::ImportLift)
+      .or_not()
+      .then(Self::global_symbol())
+      .then(
+        just(Token::Whitespace)
+          .or_not()
+          .ignore_then(just(Token::ImportEdit))
+          .ignore_then(just(Token::Whitespace).or_not())
+          .ignore_then(Self::global_symbol())
+          .or_not(),
+      )
+      .map(
+        |((lift_result, name), rewrite_result)| TerminalImportComponent {
+          name,
+          lifted: if lift_result.is_some() {
+            LiftStatus::Lifted
+          } else {
+            LiftStatus::NotLifted
+          },
+          rewritten: match rewrite_result {
+            Some(x) => ValueRewriteStatus::Rewritten(x),
+            None => ValueRewriteStatus::NotRewritten,
+          },
+        },
+      )
+  }
+}
+
+impl<'a> TokenParseable<'a> for TerminalImportComponent<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::terminal_import_components::<I>().boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum ImportTailComponent<'a> {
+  Value(TerminalImportComponent<'a>),
+  Namespace(IntermediateImportComponent<'a>, Option<Box<ImportTail<'a>>>),
+}
+
+impl<'a> ImportTailComponent<'a> {
+  fn import_tail_components<I>(
+    inner: Boxed<'a, 'a, I, ImportTail<'a>, extra::Default>,
+  ) -> impl Parser<'a, I, ImportTailComponent<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    choice((
+      TerminalImportComponent::parser().map(ImportTailComponent::Value),
+      IntermediateImportComponent::parser()
+        .then(
+          just(Token::NamespaceStart)
+            .ignore_then(just(Token::Whitespace).or_not())
+            /* FIXME: use .delimited_by() combinator! */
+            .ignore_then(inner)
+            .then_ignore(just(Token::Whitespace).or_not())
+            .then_ignore(just(Token::NamespaceClose))
+            .or_not(),
+        )
+        .map(|(component, tail)| ImportTailComponent::Namespace(component, tail.map(Box::new))),
+    ))
+  }
+}
+
+impl<'a> RecursivelyParseable<'a> for ImportTailComponent<'a> {
+  type InnerExpr = ImportTail<'a>;
+  type Tok = Token<'a>;
+
+  fn parser<I>(
+    inner: Boxed<'a, 'a, I, Self::InnerExpr, extra::Default>,
+  ) -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::import_tail_components::<I>(inner).boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ImportTail<'a> {
+  pub components: Vec<ImportTailComponent<'a>>,
+}
+
+impl<'a> HasArgSep<'a> for ImportTail<'a> {}
+
+impl<'a> ImportTail<'a> {
+  fn import_tails<I>() -> impl Parser<'a, I, ImportTail<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    recursive(|inner| {
+      ImportTailComponent::parser(inner.boxed())
+        .separated_by(Self::arg_sep())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .map(|components| ImportTail { components })
+    })
+  }
+}
+
+impl<'a> TokenParseable<'a> for ImportTail<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::import_tails::<I>().boxed()
+  }
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ImportHighlight<'a> {
+  pub prefix: Vec<IntermediateImportComponent<'a>>,
+  pub tail: Option<ImportTail<'a>>,
+}
+
+impl<'a> ImportHighlight<'a> {
+  fn import_highlights<I>() -> impl Parser<'a, I, ImportHighlight<'a>>+Clone
+  where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+    just(Token::ImportLift)
+      .ignore_then(
+        IntermediateImportComponent::parser()
+          .repeated()
+          .collect::<Vec<_>>(),
+      )
+      .then(
+        just(Token::NamespaceStart)
+          .ignore_then(just(Token::Whitespace).or_not())
+          .ignore_then(ImportTail::parser())
+          .then_ignore(just(Token::Whitespace).or_not())
+          .then_ignore(just(Token::NamespaceClose))
+          .or_not(),
+      )
+      .map(|(prefix, tail)| ImportHighlight { prefix, tail })
+  }
+}
+
+impl<'a> TokenParseable<'a> for ImportHighlight<'a> {
+  type Tok = Token<'a>;
+
+  fn parser<I>() -> Boxed<'a, 'a, I, Self, extra::Default>
+  where I: ValueInput<'a, Token=Self::Tok, Span=SimpleSpan> {
+    Self::import_highlights::<I>().boxed()
+  }
+}
 
 
 #[cfg(test)]
