@@ -82,7 +82,8 @@ pub enum Token<'a> {
   Assertion(Level),
   Application(Direction, Level),
   CaseLiteralDereference(&'a str),
-  CaseDeclaration(Option<&'a str>),
+  NamedCaseDeclaration(&'a str),
+  UnnamedCaseDeclaration,
   CaseValueAssertion(Option<&'a str>),
   GroupStart(Level),
   GroupClose(Level),
@@ -109,7 +110,7 @@ fn local_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-zA-Z_-][a
 fn case_symbol<'a>() -> impl Parser<'a, &'a str, &'a str> { regex("[a-z]+") }
 
 
-fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
+pub fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
   choice((
     just('$')
       .ignore_then(global_symbol())
@@ -143,8 +144,9 @@ fn tokenize<'a>() -> impl Parser<'a, &'a str, Token<'a>> {
       .ignore_then(case_symbol())
       .map(Token::CaseLiteralDereference),
     just("\\+")
-      .ignore_then(case_symbol().or_not())
-      .map(Token::CaseDeclaration),
+      .ignore_then(case_symbol())
+      .map(Token::NamedCaseDeclaration),
+    just("\\+").to(Token::UnnamedCaseDeclaration),
     just("+!")
       .ignore_then(case_symbol().or_not())
       .map(Token::CaseValueAssertion),
@@ -343,17 +345,19 @@ pub struct Assertion<'a> {
   pub level: Level,
 }
 
-fn assertions<'a, I>() -> impl Parser<'a, I, Assertion<'a>>+Clone
+fn assertions<'a, I>(
+  expressions: impl Parser<'a, I, Expression<'a>>+Clone+'a,
+) -> impl Parser<'a, I, Assertion<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   let assertions = select! {
     Token::Assertion(level) => level,
   };
-  expressions()
+  expressions
     .clone()
     .then_ignore(just(Token::Whitespace).or_not())
     .then(assertions)
     .then_ignore(just(Token::Whitespace).or_not())
-    .then(expressions())
+    .then(expressions)
     .map(|((lhs, level), rhs)| Assertion {
       lhs: Box::new(lhs),
       rhs: Box::new(rhs),
@@ -402,18 +406,18 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CaseDeclaration<'a> {
-  pub name: Option<&'a str>,
-  pub immediates: Vec<LeftwardImmediateSource<'a>>,
+pub struct NamedCaseDeclaration<'a> {
+  pub name: &'a str,
+  pub immediates: Vec<BasicGroup<'a>>,
   pub application: Option<(Level, Box<Expression<'a>>)>,
 }
 
 fn case_declarations<'a, I>(
   expressions: impl Parser<'a, I, Expression<'a>>+Clone+'a,
-) -> impl Parser<'a, I, CaseDeclaration<'a>>+Clone
+) -> impl Parser<'a, I, NamedCaseDeclaration<'a>>+Clone
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   let case_decls = select! {
-    Token::CaseDeclaration(name) => name,
+    Token::NamedCaseDeclaration(name) => name,
   };
   /* NB: only select rightward arrows. */
   let arrows = select! {
@@ -428,16 +432,32 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
     .or_not();
 
   case_decls
-    /* .then(leftward_immediate_sources(expressions).repeated().collect::<Vec<_>>()) */
+    .then(basic_groups(expressions).repeated().collect::<Vec<_>>())
     .then(application)
-    /* .map(|((name, immediates), application)| CaseDeclaration { */
-    .map(|(name, application)| CaseDeclaration {
+    .map(|((name, immediates), application)| NamedCaseDeclaration {
       name,
-      immediates: Vec::new(),
+      immediates,
       application,
     })
     /* compilation fails with a type too long error if this is omitted lol */
     .boxed()
+}
+
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct UnnamedCaseDeclaration<'a> {
+  pub value: Box<Expression<'a>>,
+}
+
+fn unnamed_case_decls<'a, I>(
+  expressions: impl Parser<'a, I, Expression<'a>>+Clone+'a,
+) -> impl Parser<'a, I, UnnamedCaseDeclaration<'a>>+Clone
+where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
+  just(Token::UnnamedCaseDeclaration)
+    .ignore_then(expressions)
+    .map(|expr| UnnamedCaseDeclaration {
+      value: Box::new(expr),
+    })
 }
 
 
@@ -469,7 +489,8 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CaseDeconstruction<'a> {
-  pub cases: Vec<CaseDeclaration<'a>>,
+  pub cases: Vec<NamedCaseDeclaration<'a>>,
+  pub default_case: Option<UnnamedCaseDeclaration<'a>>,
   pub level: Level,
 }
 
@@ -479,20 +500,34 @@ fn case_deconstructions<'a, I>(
 where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
   fn parse_decls<'a, I>(
     expressions: impl Parser<'a, I, Expression<'a>>+Clone+'a,
-  ) -> impl Parser<'a, I, CaseDeclaration<'a>>+Clone
+  ) -> impl Parser<'a, I, NamedCaseDeclaration<'a>>+Clone
   where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
     case_declarations(expressions).then_ignore(just(Token::Whitespace).or_not())
   }
   fn parse_inner<'a, I>(
     expressions: impl Parser<'a, I, Expression<'a>>+Clone+'a,
-  ) -> impl Parser<'a, I, Vec<CaseDeclaration<'a>>>+Clone
+  ) -> impl Parser<
+    'a,
+    I,
+    (
+      Vec<NamedCaseDeclaration<'a>>,
+      Option<UnnamedCaseDeclaration<'a>>,
+    ),
+  >+Clone
   where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
-    just(Token::Whitespace).or_not().ignore_then(
-      parse_decls(expressions)
-        .repeated()
-        .at_least(1)
-        .collect::<Vec<_>>(),
-    )
+    just(Token::Whitespace)
+      .or_not()
+      .ignore_then(
+        parse_decls(expressions.clone())
+          .repeated()
+          .at_least(1)
+          .collect::<Vec<_>>(),
+      )
+      .then(
+        unnamed_case_decls(expressions)
+          .then_ignore(just(Token::Whitespace).or_not())
+          .or_not(),
+      )
   }
 
   choice((
@@ -500,16 +535,18 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
       .ignore_then(value_group_start())
       .ignore_then(parse_inner(expressions.clone()))
       .then_ignore(value_group_end())
-      .map(|cases| CaseDeconstruction {
+      .map(|(cases, default_case)| CaseDeconstruction {
         cases,
+        default_case,
         level: Level::Value,
       }),
     just(Token::FreeCaseMarker)
       .ignore_then(type_group_start())
       .ignore_then(parse_inner(expressions))
       .then_ignore(type_group_end())
-      .map(|cases| CaseDeconstruction {
+      .map(|(cases, default_case)| CaseDeconstruction {
         cases,
+        default_case,
         level: Level::r#Type,
       }),
   ))
@@ -785,6 +822,7 @@ where I: ValueInput<'a, Token=Token<'a>, Span=SimpleSpan> {
       literals().map(Expression::Lit),
       names().map(Expression::Name),
       immediate_applications(expressions.clone()).map(Expression::Immediate),
+      assertions(expressions.clone()).map(Expression::Assertion),
       parallel_joins(expressions.clone()).map(Expression::Join),
       groups(expressions.clone()).map(Expression::Group),
       arrow_applications(expressions).map(Expression::Arrow),
