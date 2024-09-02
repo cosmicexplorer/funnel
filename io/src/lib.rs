@@ -22,50 +22,70 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 
 //! ???
 
-use std::io::{self, Write};
-
-
-/* Want to get something like output teeing from zip cli at https://github.com/cosmicexplorer/zip2/blob/cli/cli/src/extract.rs#L95-L113 */
+use std::ops;
 
 pub trait ConcatReceiver {
   type Chunk<'chunk>;
   type Ready;
   type E;
-  fn recv_chunk<'chunk>(&mut self, chunk: Self::Chunk<'chunk>) -> Result<Self::Ready, Self::E>;
+  fn recv_chunk<'chunk>(&self, chunk: Self::Chunk<'chunk>) -> Result<Self::Ready, Self::E>;
 
   fn finalize(&mut self) -> Result<Self::Ready, Self::E>;
 }
 
-pub struct ByteStream<S> {
-  inner: S,
-}
-
-impl<S> ByteStream<S> {
-  pub const fn new(inner: S) -> Self { Self { inner } }
-}
-
-impl<S> ConcatReceiver for ByteStream<S>
-where S: io::Write
-{
-  type Chunk<'chunk> = &'chunk [u8];
-  type Ready = ();
-  type E = io::Error;
-  fn recv_chunk<'chunk>(&mut self, chunk: Self::Chunk<'chunk>) -> Result<(), io::Error> {
-    self.inner.write_all(chunk)?;
-    Ok(())
-  }
-
-  fn finalize(&mut self) -> Result<(), io::Error> { self.inner.flush() }
-}
-
 pub trait EntryReceiver {
+  type EntryName;
   type EntrySpec;
 
   type E;
   type Receiver: ConcatReceiver;
 
-  fn generate_entry_handle(&self, name: Self::EntrySpec) -> Result<Self::Receiver, Self::E>;
+  fn generate_entry_handle(
+    &mut self,
+    name: Self::EntryName,
+    spec: Self::EntrySpec,
+  ) -> Result<(), Self::E>;
+
+  fn dereference_entry(
+    &self,
+    name: Self::EntryName,
+  ) -> Result<impl ops::Deref<Target=Self::Receiver>, Self::E>;
+
   fn finalize_entries(&mut self) -> Result<(), Self::E>;
+}
+
+pub mod stream_wrapper {
+  use std::io;
+
+  use parking_lot::Mutex;
+
+  use super::ConcatReceiver;
+
+  pub struct ByteStream<S> {
+    inner: Mutex<S>,
+  }
+
+  impl<S> ByteStream<S> {
+    pub const fn new(inner: S) -> Self {
+      Self {
+        inner: Mutex::new(inner),
+      }
+    }
+  }
+
+  impl<S> ConcatReceiver for ByteStream<S>
+  where S: io::Write
+  {
+    type Chunk<'chunk> = &'chunk [u8];
+    type Ready = ();
+    type E = io::Error;
+    fn recv_chunk<'chunk>(&self, chunk: Self::Chunk<'chunk>) -> Result<(), io::Error> {
+      self.inner.lock().write_all(chunk)?;
+      Ok(())
+    }
+
+    fn finalize(&mut self) -> Result<(), io::Error> { self.inner.get_mut().flush() }
+  }
 }
 
 pub mod path {
@@ -179,14 +199,14 @@ pub mod path {
   }
 }
 
-pub mod filesystem {
+pub mod file_handle {
   use std::{
     fs,
     io::{self, Seek, Write},
   };
 
   use displaydoc::Display;
-  use indexmap::IndexMap;
+  use parking_lot::Mutex;
   use thiserror::Error;
 
   use super::{path, ConcatReceiver};
@@ -199,11 +219,13 @@ pub mod filesystem {
     Io(#[from] io::Error),
   }
 
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub enum PathCreationBehavior {
     RequireParents,
     CreateParentsIfNotExists,
   }
 
+  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
   pub enum FileCreationBehavior {
     RequireNotExists(PathCreationBehavior),
     TruncateIfExists(PathCreationBehavior),
@@ -301,11 +323,15 @@ pub mod filesystem {
   }
 
   pub struct FileStream {
-    inner: fs::File,
+    inner: Mutex<fs::File>,
   }
 
   impl FileStream {
-    pub const fn new(inner: fs::File) -> Self { Self { inner } }
+    pub const fn new(inner: fs::File) -> Self {
+      Self {
+        inner: Mutex::new(inner),
+      }
+    }
 
     pub fn open(
       abs_path: path::AbsolutePath,
@@ -320,25 +346,138 @@ pub mod filesystem {
     type Chunk<'chunk> = &'chunk [u8];
     type Ready = ();
     type E = io::Error;
-    fn recv_chunk<'chunk>(&mut self, chunk: Self::Chunk<'chunk>) -> Result<(), io::Error> {
-      self.inner.write_all(chunk)?;
+    fn recv_chunk<'chunk>(&self, chunk: Self::Chunk<'chunk>) -> Result<(), io::Error> {
+      self.inner.lock().write_all(chunk)?;
       Ok(())
     }
 
     fn finalize(&mut self) -> Result<(), io::Error> {
-      self.inner.sync_data()?;
+      self.inner.get_mut().sync_data()?;
       Ok(())
     }
   }
+}
 
+pub mod output_dir {
+  use std::{io, ops, sync::Arc};
+
+  use displaydoc::Display;
+  use indexmap::IndexMap;
+  use thiserror::Error;
+
+  use super::{file_handle, path, ConcatReceiver, EntryReceiver};
+
+  #[derive(Debug, Display, Error)]
+  pub enum DirBookkeepingError {
+    /** entry with name {1:?} and spec {2:?} could not be created, due to
+     * entry {0:?} already existing at canonical path {3:?} */
+    OverlappingCanonicalPath(String, String, FileSpec, path::CanonicalPath),
+    /// entry with name {0:?} already exists
+    NameAlreadyExists(String),
+    /// entry with name {0:?} not found
+    NameNotFound(String),
+    /** not all handles were dropped for entry {0:?} when output dir was
+     * finalized */
+    NotAllHandlesDropped(String),
+  }
+
+  #[derive(Debug, Display, Error)]
+  pub enum OutputDirError {
+    /// path error
+    Path(#[from] path::PathError),
+    /// i/o error
+    Io(#[from] io::Error),
+    /// file handle error
+    File(#[from] file_handle::FileHandleError),
+    /// dir bookkeeping error
+    Bookkeeping(#[from] DirBookkeepingError),
+  }
+
+  #[derive(Debug, Clone)]
   pub struct FileSpec {
-    relpath: path::RelativePath,
-    create_behavior: FileCreationBehavior,
+    pub relpath: path::RelativePath,
+    pub create_behavior: file_handle::FileCreationBehavior,
   }
 
   pub struct OutputDir {
     root: path::AbsolutePath,
-    active_entries: IndexMap<path::CanonicalPath, FileStream>,
+    active_entries: IndexMap<String, Arc<file_handle::FileStream>>,
+    path_mapping: IndexMap<path::CanonicalPath, String>,
+  }
+
+  impl OutputDir {
+    pub fn create(root: path::AbsolutePath) -> Result<Self, io::Error> {
+      root.create_dir_all()?;
+      Ok(Self {
+        root,
+        active_entries: IndexMap::new(),
+        path_mapping: IndexMap::new(),
+      })
+    }
+  }
+
+  impl EntryReceiver for OutputDir {
+    type EntryName = String;
+    type EntrySpec = FileSpec;
+
+    type E = OutputDirError;
+    type Receiver = file_handle::FileStream;
+
+    fn generate_entry_handle(
+      &mut self,
+      name: String,
+      spec: FileSpec,
+    ) -> Result<(), OutputDirError> {
+      if self.active_entries.contains_key(&name) {
+        return Err(DirBookkeepingError::NameAlreadyExists(name).into());
+      }
+      let FileSpec {
+        relpath,
+        create_behavior,
+      } = spec.clone();
+      let new_path = path::AbsolutePath::new(self.root.as_ref().join(relpath.as_ref()))?;
+      let canon_path = new_path.canonicalize()?;
+      if let Some(existing_name) = self.path_mapping.get(&canon_path) {
+        return Err(
+          DirBookkeepingError::OverlappingCanonicalPath(
+            existing_name.clone(),
+            name,
+            spec,
+            canon_path,
+          )
+          .into(),
+        );
+      }
+      let new_stream = file_handle::FileStream::open(new_path, create_behavior)?;
+      assert!(self
+        .active_entries
+        .insert(name.clone(), Arc::new(new_stream))
+        .is_none());
+      assert!(self.path_mapping.insert(canon_path, name).is_none());
+      Ok(())
+    }
+
+    fn dereference_entry(
+      &self,
+      name: String,
+    ) -> Result<impl ops::Deref<Target=file_handle::FileStream>, OutputDirError> {
+      match self.active_entries.get(&name) {
+        None => Err(DirBookkeepingError::NameNotFound(name).into()),
+        Some(entry) => Ok(Arc::clone(&entry)),
+      }
+    }
+
+    fn finalize_entries(&mut self) -> Result<(), OutputDirError> {
+      for (name, mut stream) in self.active_entries.drain(..) {
+        let stream = match Arc::get_mut(&mut stream) {
+          None => return Err(DirBookkeepingError::NotAllHandlesDropped(name).into()),
+          Some(stream) => stream,
+        };
+        stream.finalize()?;
+      }
+      self.path_mapping.clear();
+      Ok(())
+    }
   }
 }
 
