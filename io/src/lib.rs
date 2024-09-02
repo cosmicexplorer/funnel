@@ -355,6 +355,7 @@ pub mod file_handle {
     }
   }
 
+  #[derive(Debug)]
   pub struct FileStream {
     inner: Mutex<fs::File>,
   }
@@ -531,23 +532,35 @@ pub mod output_dir {
         create_behavior,
       } = spec.clone();
       let new_path = path::AbsolutePath::new(self.root.as_ref().join(relpath.as_ref()))?;
-      let canon_path = new_path.canonicalize()?;
-      if let Some(existing_name) = self.path_mapping.get(&canon_path) {
-        return Err(
-          DirBookkeepingError::OverlappingCanonicalPath(
-            existing_name.clone(),
-            name,
-            spec,
-            canon_path,
-          )
-          .into(),
-        );
-      }
-      let new_stream = file_handle::FileStream::open(new_path, create_behavior)?;
+
+      let canon_path: Option<path::CanonicalPath> = match new_path.canonicalize() {
+        Ok(canon_path) => {
+          if let Some(existing_name) = self.path_mapping.get(&canon_path) {
+            return Err(
+              DirBookkeepingError::OverlappingCanonicalPath(
+                existing_name.clone(),
+                name,
+                spec,
+                canon_path,
+              )
+              .into(),
+            );
+          }
+          Some(canon_path)
+        },
+        Err(_) => None,
+      };
+
+      let new_stream = file_handle::FileStream::open(new_path.clone(), create_behavior)?;
       assert!(self
         .active_entries
         .insert(name.clone(), Arc::new(new_stream))
         .is_none());
+
+      let canon_path = match canon_path {
+        Some(canon_path) => canon_path,
+        None => new_path.canonicalize()?,
+      };
       assert!(self.path_mapping.insert(canon_path, name).is_none());
       Ok(())
     }
@@ -574,14 +587,82 @@ pub mod output_dir {
       Ok(())
     }
   }
-}
 
-#[cfg(test)]
-mod test {
+  #[cfg(test)]
+  mod test {
+    use std::fs;
 
+    use tempfile::tempdir;
 
-  #[test]
-  fn f() {
-    assert!(true);
+    use super::*;
+    use crate::file_handle::{FileCreationBehavior, PathCreationBehavior};
+
+    #[test]
+    fn resolve_file() {
+      let td = tempdir().unwrap();
+
+      let root = path::AbsolutePath::new(td.path().to_path_buf()).unwrap();
+      let mut dir = OutputDir::create(root).unwrap();
+
+      let p1 = path::RelativePath::new("asdf".into()).unwrap();
+      let spec1 = FileSpec {
+        relpath: p1,
+        create_behavior: FileCreationBehavior::TruncateIfExists(
+          PathCreationBehavior::RequireParents,
+        ),
+      };
+      let p2 = path::RelativePath::new("bsdf".into()).unwrap();
+      let spec2 = FileSpec {
+        relpath: p2,
+        create_behavior: FileCreationBehavior::TruncateIfExists(
+          PathCreationBehavior::RequireParents,
+        ),
+      };
+
+      let s1 = "entry-a".to_string();
+      let s2 = "entry-b".to_string();
+      dir
+        .generate_entry_handle(s1.clone(), spec1.clone())
+        .unwrap();
+
+      /* (1) check matching name */
+      assert!(matches!(
+        dir.generate_entry_handle(s1.clone(), spec1.clone()),
+        Err(OutputDirError::Bookkeeping(
+          DirBookkeepingError::NameAlreadyExists(_)
+        ))
+      ));
+      /* (2) check matching path */
+      assert!(matches!(
+        dir.generate_entry_handle(s2.clone(), spec1),
+        Err(OutputDirError::Bookkeeping(
+          DirBookkeepingError::OverlappingCanonicalPath(_, _, _, _)
+        ))
+      ));
+      /* (3) check separate name */
+      dir.generate_entry_handle(s2.clone(), spec2).unwrap();
+
+      {
+        /* Get outputs, write to them, then drop them. */
+        let f1 = dir.dereference_entry(s1.clone()).unwrap();
+        let f2 = dir.dereference_entry(s2.clone()).unwrap();
+        assert!(matches!(
+          dir.dereference_entry("bbbbb".to_string()),
+          Err(OutputDirError::Bookkeeping(
+            DirBookkeepingError::NameNotFound(_)
+          ))
+        ));
+
+        f1.recv_chunk(b"1234").unwrap();
+        f2.recv_chunk(b"5678").unwrap();
+      }
+
+      dir.finalize_entries().unwrap();
+
+      let o1 = fs::read(td.path().join("asdf")).unwrap();
+      assert_eq!(b"1234".as_ref(), &o1);
+      let o2 = fs::read(td.path().join("bsdf")).unwrap();
+      assert_eq!(b"5678".as_ref(), &o2);
+    }
   }
 }
