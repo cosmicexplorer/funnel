@@ -23,6 +23,7 @@ repository              = "https://github.com/cosmicexplorer/funnel"
 [workspace.dependencies]
 displaydoc              = "0.2.5"
 indexmap                = "2.5"
+libc                    = "0.2.158"
 parking_lot             = "0.12.3"
 tempfile                = "3.12"
 thiserror               = "1.0.63"

@@ -59,6 +59,7 @@ version = "0.0.0"
 dependencies = [
  "displaydoc",
  "indexmap",
+ "libc",
  "parking_lot",
  "tempfile",
  "thiserror",

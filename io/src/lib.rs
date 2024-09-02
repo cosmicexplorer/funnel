@@ -27,6 +27,7 @@ use std::ops;
 pub mod dir;
 pub mod file;
 pub mod path;
+pub mod split;
 
 pub trait ConcatReceiver {
   type Chunk<'chunk>;

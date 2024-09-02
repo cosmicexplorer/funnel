@@ -13,6 +13,7 @@ repository.workspace    = true
 [dependencies]
 displaydoc.workspace    = true
 indexmap.workspace      = true
+libc.workspace          = true
 parking_lot.workspace   = true
 thiserror.workspace     = true
 
