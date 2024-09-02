@@ -10,9 +10,14 @@ categories              = []
 homepage.workspace      = true
 repository.workspace    = true
 
+[dependencies]
+displaydoc.workspace    = true
+indexmap.workspace      = true
+thiserror.workspace     = true
+
 [package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+all-features            = true
+rustdoc-args            = ["--cfg", "docsrs"]
 
 [lints]
 workspace               = true
