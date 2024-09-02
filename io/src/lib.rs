@@ -455,7 +455,7 @@ pub mod file_handle {
 }
 
 pub mod output_dir {
-  use std::{io, ops, sync::Arc};
+  use std::{io, sync::Arc};
 
   use displaydoc::Display;
   use indexmap::IndexMap;
@@ -565,10 +565,11 @@ pub mod output_dir {
       Ok(())
     }
 
+    #[allow(refining_impl_trait)]
     fn dereference_entry(
       &self,
       name: String,
-    ) -> Result<impl ops::Deref<Target=file_handle::FileStream>, OutputDirError> {
+    ) -> Result<Arc<file_handle::FileStream>, OutputDirError> {
       match self.active_entries.get(&name) {
         None => Err(DirBookkeepingError::NameNotFound(name).into()),
         Some(entry) => Ok(Arc::clone(&entry)),
@@ -663,6 +664,36 @@ pub mod output_dir {
       assert_eq!(b"1234".as_ref(), &o1);
       let o2 = fs::read(td.path().join("bsdf")).unwrap();
       assert_eq!(b"5678".as_ref(), &o2);
+    }
+
+    #[test]
+    fn not_all_dropped() {
+      let td = tempdir().unwrap();
+
+      let root = path::AbsolutePath::new(td.path().to_path_buf()).unwrap();
+      let mut dir = OutputDir::create(root).unwrap();
+
+      let p1 = path::RelativePath::new("asdf".into()).unwrap();
+      let spec1 = FileSpec {
+        relpath: p1,
+        create_behavior: FileCreationBehavior::TruncateIfExists(
+          PathCreationBehavior::RequireParents,
+        ),
+      };
+
+      let s1 = "entry-a".to_string();
+      dir
+        .generate_entry_handle(s1.clone(), spec1.clone())
+        .unwrap();
+
+      let _f1 = dir.dereference_entry(s1.clone()).unwrap();
+
+      assert!(matches!(
+        dir.finalize_entries(),
+        Err(OutputDirError::Bookkeeping(
+          DirBookkeepingError::NotAllHandlesDropped(_)
+        ))
+      ));
     }
   }
 }
