@@ -1,0 +1,18 @@
+[package]
+name                    = "funnel-io"
+version.workspace       = true
+edition.workspace       = true
+authors.workspace       = true
+license.workspace       = true
+
+keywords                = []
+categories              = []
+homepage.workspace      = true
+repository.workspace    = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace               = true

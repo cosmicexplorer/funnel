@@ -1,9 +1,11 @@
 [workspace]
 members                 = [
-  "./language",
+  "./io",
+  # "./language",
 ]
 default-members         = [
-  "./language",
+  "./io",
+  # "./language",
 ]
 resolver                = "2"
 
@@ -25,3 +27,20 @@ thiserror               = "1.0.30"
 [profile.release]
 strip                   = true
 lto                     = true
+
+[workspace.lints.clippy]
+len_without_is_empty    = "allow"
+redundant_field_names   = "allow"
+too_many_arguments      = "allow"
+single_component_path_imports = "allow"
+module_inception        = "allow"
+match_ref_pats          = "allow"
+expl_impl_clone_on_copy = "deny"
+if_not_else             = "deny"
+needless_continue       = "deny"
+separated_literal_suffix = "deny"
+unseparated_literal_suffix = "allow"
+used_underscore_binding = "deny"
+collapsible_else_if     = "allow"
+result_large_err        = "allow"
+missing_transmute_annotations = "allow"

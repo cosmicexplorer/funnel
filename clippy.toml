@@ -1,0 +1,7 @@
+max-fn-params-bools = 0
+trivial-copy-size-limit = 24
+pass-by-value-size-limit = 24
+warn-on-all-wildcard-imports = true
+
+[third-party]
+clippy-feature = "nightly"
