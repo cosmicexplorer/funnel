@@ -417,6 +417,26 @@ pub mod file_handle {
     }
 
     #[test]
+    fn dir_creation() {
+      let td = tempdir().unwrap();
+
+      let p = path::AbsolutePath::new(td.path().join("a/b")).unwrap();
+      match FileStream::open(
+        p.clone(),
+        FileCreationBehavior::RequireNotExists(PathCreationBehavior::RequireParents),
+      ) {
+        Err(FileHandleError::Io(e)) => assert_eq!(e.kind(), io::ErrorKind::NotFound),
+        _ => unreachable!(),
+      }
+
+      let _f = FileStream::open(
+        p,
+        FileCreationBehavior::RequireNotExists(PathCreationBehavior::CreateParentsIfNotExists),
+      )
+      .unwrap();
+    }
+
+    #[test]
     fn resolve_file() {
       let td = tempdir().unwrap();
 
