@@ -61,6 +61,7 @@ pub mod stream_wrapper {
 
   use super::ConcatReceiver;
 
+  #[derive(Debug)]
   pub struct ByteStream<S> {
     inner: Mutex<S>,
   }
@@ -71,6 +72,8 @@ pub mod stream_wrapper {
         inner: Mutex::new(inner),
       }
     }
+
+    pub fn into_inner(self) -> S { self.inner.into_inner() }
   }
 
   impl<S> ConcatReceiver for ByteStream<S>
@@ -85,6 +88,26 @@ pub mod stream_wrapper {
     }
 
     fn finalize(&mut self) -> Result<(), io::Error> { self.inner.get_mut().flush() }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn simple_wrapper() {
+      let out = Cursor::new(Vec::new());
+      let mut s = ByteStream::new(out);
+
+      s.recv_chunk(b"asdf").unwrap();
+      s.recv_chunk(b"asdf").unwrap();
+      s.finalize().unwrap();
+
+      let out = s.into_inner().into_inner();
+      assert_eq!(&out, b"asdfasdf");
+    }
   }
 }
 
@@ -240,6 +263,8 @@ pub mod file_handle {
     ) -> Result<fs::File, FileHandleError> {
       let mut opts = fs::OpenOptions::new();
       opts.write(true).create_new(true);
+      #[cfg(test)]
+      opts.read(true);
       match path_behavior {
         PathCreationBehavior::RequireParents => opts.open(abs_path.as_ref()).map_err(|e| e.into()),
         PathCreationBehavior::CreateParentsIfNotExists => match opts.open(abs_path.as_ref()) {
@@ -264,6 +289,8 @@ pub mod file_handle {
     ) -> Result<fs::File, FileHandleError> {
       let mut opts = fs::OpenOptions::new();
       opts.write(true).truncate(true).create(true);
+      #[cfg(test)]
+      opts.read(true);
       match path_behavior {
         PathCreationBehavior::RequireParents => opts.open(abs_path.as_ref()).map_err(|e| e.into()),
         PathCreationBehavior::CreateParentsIfNotExists => match opts.open(abs_path.as_ref()) {
@@ -286,6 +313,8 @@ pub mod file_handle {
     ) -> Result<fs::File, FileHandleError> {
       let mut opts = fs::OpenOptions::new();
       opts.write(true).create(true);
+      #[cfg(test)]
+      opts.read(true);
       let mut f = match path_behavior {
         PathCreationBehavior::RequireParents => opts.open(abs_path.as_ref())?,
         PathCreationBehavior::CreateParentsIfNotExists => match opts.open(abs_path.as_ref()) {
@@ -305,7 +334,11 @@ pub mod file_handle {
     }
 
     fn require_exists_for_append(abs_path: path::AbsolutePath) -> Result<fs::File, io::Error> {
-      let mut f = fs::OpenOptions::new().write(true).open(abs_path.as_ref())?;
+      let mut opts = fs::OpenOptions::new();
+      opts.write(true);
+      #[cfg(test)]
+      opts.read(true);
+      let mut f = opts.open(abs_path.as_ref())?;
       f.seek(io::SeekFrom::End(0))?;
       Ok(f)
     }
@@ -333,6 +366,8 @@ pub mod file_handle {
       }
     }
 
+    pub fn into_inner(self) -> fs::File { self.inner.into_inner() }
+
     pub fn open(
       abs_path: path::AbsolutePath,
       create_behavior: FileCreationBehavior,
@@ -354,6 +389,66 @@ pub mod file_handle {
     fn finalize(&mut self) -> Result<(), io::Error> {
       self.inner.get_mut().sync_data()?;
       Ok(())
+    }
+  }
+
+  #[cfg(test)]
+  mod test {
+    use std::io::{self, Read, Seek};
+
+    use tempfile::{tempdir, tempfile};
+
+    use super::*;
+
+    #[test]
+    fn basic_recv() {
+      let mut f = FileStream::new(tempfile().unwrap());
+
+      f.recv_chunk(b"asdf").unwrap();
+      f.recv_chunk(b"asdf").unwrap();
+      f.finalize().unwrap();
+
+      let mut f = f.into_inner();
+      f.rewind().unwrap();
+      let mut s = String::new();
+      f.read_to_string(&mut s).unwrap();
+      assert_eq!(&s, "asdfasdf");
+    }
+
+    #[test]
+    fn resolve_file() {
+      let td = tempdir().unwrap();
+
+      let p = path::AbsolutePath::new(td.path().join("asdf")).unwrap();
+      match FileStream::open(p.clone(), FileCreationBehavior::RequireExistsForAppend) {
+        Err(FileHandleError::Io(e)) => assert_eq!(e.kind(), io::ErrorKind::NotFound),
+        _ => unreachable!(),
+      }
+
+      {
+        let mut f = FileStream::open(
+          p.clone(),
+          FileCreationBehavior::TruncateIfExists(PathCreationBehavior::RequireParents),
+        )
+        .unwrap();
+        f.recv_chunk(b"asdf").unwrap();
+        f.recv_chunk(b"asdf").unwrap();
+        f.finalize().unwrap();
+      }
+      let mut f = FileStream::open(
+        p,
+        FileCreationBehavior::AppendIfExists(PathCreationBehavior::RequireParents),
+      )
+      .unwrap();
+      f.recv_chunk(b"bsdf").unwrap();
+      f.recv_chunk(b"bsdf").unwrap();
+      f.finalize().unwrap();
+
+      let mut f = f.into_inner();
+      f.rewind().unwrap();
+      let mut s = String::new();
+      f.read_to_string(&mut s).unwrap();
+      assert_eq!(&s, "asdfasdfbsdfbsdf");
     }
   }
 }

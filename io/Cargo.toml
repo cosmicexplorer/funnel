@@ -16,6 +16,9 @@ indexmap.workspace      = true
 parking_lot.workspace   = true
 thiserror.workspace     = true
 
+[dev-dependencies]
+tempfile.workspace      = true
+
 [package.metadata.docs.rs]
 all-features            = true
 rustdoc-args            = ["--cfg", "docsrs"]
