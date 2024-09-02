@@ -151,8 +151,10 @@ mod test {
 
   use tempfile::tempdir;
 
-  use super::*;
-  use crate::file::{FileCreationBehavior, PathCreationBehavior};
+  use super::{
+    super::file::{FileCreationBehavior, PathCreationBehavior},
+    *,
+  };
 
   #[test]
   fn resolve_file() {

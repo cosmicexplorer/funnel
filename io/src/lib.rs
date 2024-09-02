@@ -22,96 +22,122 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 
 //! ???
 
-use std::ops;
-
-pub mod dir;
-pub mod file;
-pub mod path;
+pub mod merge;
 pub mod split;
 
-pub trait ConcatReceiver {
-  type Chunk<'chunk>;
-  type Ready;
-  type E;
-  fn recv_chunk<'chunk>(&self, chunk: Self::Chunk<'chunk>) -> Result<Self::Ready, Self::E>;
 
-  fn finalize(&mut self) -> Result<Self::Ready, Self::E>;
-}
-
-pub trait EntryReceiver {
-  type EntryName;
-  type EntrySpec;
-
-  type E;
-  type Receiver: ConcatReceiver;
-
-  fn generate_entry_handle(
-    &mut self,
-    name: Self::EntryName,
-    spec: Self::EntrySpec,
-  ) -> Result<(), Self::E>;
-
-  fn dereference_entry(
-    &self,
-    name: Self::EntryName,
-  ) -> Result<impl ops::Deref<Target=Self::Receiver>, Self::E>;
-
-  fn finalize_entries(&mut self) -> Result<(), Self::E>;
-}
-
-pub mod stream_wrapper {
-  use std::io;
-
-  use parking_lot::Mutex;
-
-  use super::ConcatReceiver;
-
-  #[derive(Debug)]
-  pub struct ByteStream<S> {
-    inner: Mutex<S>,
-  }
-
-  impl<S> ByteStream<S> {
-    pub const fn new(inner: S) -> Self {
-      Self {
-        inner: Mutex::new(inner),
-      }
+#[macro_export]
+macro_rules! interruptible_buffered_io_op {
+  ($op:expr) => {
+    match $op {
+      Ok(n) => n,
+      Err(e) if e.kind() == ::std::io::ErrorKind::Interrupted => continue,
+      Err(e) => return Err(e),
     }
+  };
+}
 
-    pub fn into_inner(self) -> S { self.inner.into_inner() }
+pub mod util {
+  use std::io::{self, Read, Write};
+
+  pub struct TakeWrite<W> {
+    inner: W,
+    limit: u64,
   }
 
-  impl<S> ConcatReceiver for ByteStream<S>
-  where S: io::Write
+  impl<W> TakeWrite<W> {
+    pub const fn take(inner: W, limit: u64) -> Self { Self { inner, limit } }
+
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub const fn limit(&self) -> u64 { self.limit }
+
+    #[allow(dead_code)]
+    pub fn into_inner(self) -> W { self.inner }
+  }
+
+  impl<W> Write for TakeWrite<W>
+  where W: Write
   {
-    type Chunk<'chunk> = &'chunk [u8];
-    type Ready = ();
-    type E = io::Error;
-    fn recv_chunk<'chunk>(&self, chunk: Self::Chunk<'chunk>) -> Result<(), io::Error> {
-      self.inner.lock().write_all(chunk)?;
-      Ok(())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+      if self.limit == 0 {
+        return Ok(0);
+      }
+
+      let buf_len: u64 = buf.len().try_into().unwrap();
+      let to_write_offset: u64 = buf_len.min(self.limit);
+      let to_write: usize = to_write_offset.try_into().unwrap();
+
+      let num_written: usize = self.inner.write(&buf[..to_write])?;
+      assert!(num_written <= to_write);
+      let num_written_offset: u64 = num_written.try_into().unwrap();
+      self.limit -= num_written_offset;
+      Ok(num_written)
     }
 
-    fn finalize(&mut self) -> Result<(), io::Error> { self.inner.get_mut().flush() }
+    fn flush(&mut self) -> io::Result<()> { self.inner.flush() }
+  }
+
+  pub fn copy_via_buf<R, W>(r: &mut R, w: &mut W, buf: &mut [u8]) -> io::Result<u64>
+  where
+    R: Read+?Sized,
+    W: Write+?Sized,
+  {
+    assert!(!buf.is_empty());
+    let mut total_copied: u64 = 0;
+
+    loop {
+      let num_read: usize = interruptible_buffered_io_op![r.read(buf)];
+      if num_read == 0 {
+        break;
+      }
+      let num_read_offset: u64 = num_read.try_into().unwrap();
+
+      /* TODO: use a ring buffer instead of .write_all() here! */
+      w.write_all(&buf[..num_read])?;
+      total_copied += num_read_offset;
+    }
+
+    Ok(total_copied)
   }
 
   #[cfg(test)]
   mod test {
-    use std::io::Cursor;
+    use std::{
+      fs,
+      io::{self, Cursor, Seek},
+    };
+
+    use tempfile;
 
     use super::*;
 
+    fn readable_file(input: &[u8]) -> io::Result<fs::File> {
+      let mut i = tempfile::tempfile()?;
+      i.write_all(input)?;
+      i.rewind()?;
+      Ok(i)
+    }
+
     #[test]
-    fn simple_wrapper() {
+    fn take_write_copy() {
+      let mut i = readable_file(b"asdf".as_ref()).unwrap();
       let out = Cursor::new(Vec::new());
-      let mut s = ByteStream::new(out);
+      let mut limited = TakeWrite::take(out, 3);
+      assert_eq!(3, limited.limit());
 
-      s.recv_chunk(b"asdf").unwrap();
-      s.recv_chunk(b"asdf").unwrap();
-      s.finalize().unwrap();
+      let mut buf = [0u8; 15];
 
-      let out = s.into_inner().into_inner();
-      assert_eq!(&out, b"asdfasdf");
+      assert_eq!(
+        io::ErrorKind::WriteZero,
+        copy_via_buf(&mut i, &mut limited, &mut buf[..])
+          .err()
+          .unwrap()
+          .kind()
+      );
+      assert_eq!(0, limited.limit());
+      let out = limited.into_inner().into_inner();
+      assert_eq!(&out[..], b"asd".as_ref());
     }
   }
 }
