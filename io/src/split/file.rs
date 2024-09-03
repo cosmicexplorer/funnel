@@ -122,6 +122,9 @@ pub trait OutputFile: FixedFile {
   }
 }
 
+pub trait UnboundedOutputFile: io::Write {}
+
+/* TODO: copy range to a file of unknown size! */
 pub trait CopyRange {
   type InF: InputFile;
   type OutF: OutputFile;
@@ -170,6 +173,27 @@ pub trait CopyRange {
   }
 }
 
+pub trait UnboundedCopyRange {
+  type InF: InputFile;
+  type OutF: UnboundedOutputFile;
+
+  fn copy_file_range(
+    &mut self,
+    from: (&Self::InF, u64),
+    to: &mut Self::OutF,
+    len: usize,
+  ) -> io::Result<usize>;
+
+  fn unbounded_copy_file_range_to_end(
+    &mut self,
+    _from: (&Self::InF, u64),
+    _to: &mut Self::OutF,
+    _chunk_size: usize,
+  ) -> io::Result<u64> {
+    todo!("implement this by copying in chunks from the provided offset to the end")
+  }
+}
+
 #[cfg(unix)]
 pub mod unix {
   use std::{
@@ -213,7 +237,6 @@ pub mod unix {
 
     pub(crate) fn fd(&self) -> RawFd { self.handle.as_raw_fd() }
 
-    #[allow(dead_code)]
     pub fn on_same_device(&self, to: &FileOutput) -> io::Result<bool> {
       let libc::stat {
         st_dev: from_dev, ..
@@ -240,6 +263,25 @@ pub mod unix {
         .unwrap();
       Ok(n)
     }
+  }
+
+  /* TODO: impl UnboundedOutputFile, impl UnboundedCopyRange, impl
+   * UnboundedReadSplicer! */
+  pub struct UnboundedFileOutput {
+    handle: OwnedFd,
+  }
+
+  impl UnboundedFileOutput {
+    pub fn new(file: fs::File) -> Self {
+      Self {
+        handle: file.into(),
+      }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn fd(&self) -> RawFd { self.handle.as_raw_fd() }
+
+    pub fn into_file(self) -> fs::File { self.handle.into() }
   }
 
   pub struct FileOutput {

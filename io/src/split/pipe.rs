@@ -20,10 +20,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 
 use std::io;
 
-use super::file::{InputFile, OutputFile};
+use super::file::{InputFile, OutputFile, UnboundedOutputFile};
 use crate::interruptible_buffered_io_op;
 
-#[allow(dead_code)]
 pub trait WriteEnd: io::Write {}
 
 pub trait WriteSplicer {
@@ -70,7 +69,6 @@ pub trait WriteSplicer {
   }
 }
 
-#[allow(dead_code)]
 pub trait ReadEnd: io::Read {}
 
 pub trait ReadSplicer {
@@ -113,6 +111,40 @@ pub trait ReadSplicer {
     }
 
     Ok(())
+  }
+}
+
+/* TODO: splice to a file of unknown size! */
+pub trait UnboundedReadSplicer {
+  type InP: ReadEnd;
+  type OutF: UnboundedOutputFile;
+
+  fn splice_to_file(
+    &mut self,
+    from: &mut Self::InP,
+    to: &mut Self::OutF,
+    len: usize,
+  ) -> io::Result<usize>;
+
+  fn unbounded_splice_to_end(
+    &mut self,
+    from: &mut Self::InP,
+    to: &mut Self::OutF,
+    chunk_size: usize,
+  ) -> io::Result<u64> {
+    let mut total_spliced: u64 = 0;
+
+    loop {
+      let num_written: usize =
+        interruptible_buffered_io_op![self.splice_to_file(from, to, chunk_size)];
+      if num_written == 0 {
+        break;
+      }
+      let num_written_offset: u64 = num_written.try_into().unwrap();
+      total_spliced += num_written_offset;
+    }
+
+    Ok(total_spliced)
   }
 }
 
@@ -217,7 +249,6 @@ pub mod unix {
   }
 
   impl<'infd, 'buf> PipeWriteBufferSplicer<'infd, 'buf> {
-    #[allow(dead_code)]
     pub fn new(buf: &'buf mut [u8]) -> Self {
       assert!(!buf.is_empty());
       Self {
@@ -273,7 +304,6 @@ pub mod unix {
   }
 
   impl<'buf> PipeReadBufferSplicer<'buf> {
-    #[allow(dead_code)]
     pub fn new(buf: &'buf mut [u8]) -> Self {
       assert!(!buf.is_empty());
       Self { buf }

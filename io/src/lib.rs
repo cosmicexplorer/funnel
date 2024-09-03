@@ -78,11 +78,11 @@ pub mod util {
     fn flush(&mut self) -> io::Result<()> { self.inner.flush() }
   }
 
-  pub fn copy_via_buf<R, W>(r: &mut R, w: &mut W, buf: &mut [u8]) -> io::Result<u64>
-  where
-    R: Read+?Sized,
-    W: Write+?Sized,
-  {
+  pub fn copy_via_buf(
+    r: &mut (impl Read+?Sized),
+    w: &mut (impl Write+?Sized),
+    buf: &mut [u8],
+  ) -> io::Result<u64> {
     assert!(!buf.is_empty());
     let mut total_copied: u64 = 0;
 
@@ -93,7 +93,7 @@ pub mod util {
       }
       let num_read_offset: u64 = num_read.try_into().unwrap();
 
-      /* TODO: use a ring buffer instead of .write_all() here! */
+      /* TODO: use a ring buffer instead of .write_all() here? */
       w.write_all(&buf[..num_read])?;
       total_copied += num_read_offset;
     }
